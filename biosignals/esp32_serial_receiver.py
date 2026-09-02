@@ -1,0 +1,231 @@
+"""
+VAPA Asynchronous ESP32 Serial Telemetry Receiver
+High-speed non-blocking UART receiver on NVIDIA Jetson Orin (/dev/ttyTHS1 @ 115200 Baud).
+Ingests, deserializes, and validates real-time 100 Hz JSON frames from ESP32 Node:
+- 4x FSR 402 Tactile Sensors (Thumb, Index, Middle, Ring)
+- MyoWare 2.0 EMG Muscle Signal
+- EEG Brainwave Analog Signal
+"""
+
+import time
+import json
+import logging
+import threading
+import numpy as np
+
+try:
+    import serial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
+
+from config.hardware_config import BIOSIGNAL_SERIAL_PORT, BIOSIGNAL_BAUD_RATE
+
+logger = logging.getLogger("VAPA.Biosignals.ESP32Receiver")
+
+# FSR 402 Calibration Constant: Converts 0-3.3V divider voltage to Newtons
+# With 10k divider to 3.3V: V_out = 3.3 * (10k / (R_fsr + 10k))
+FSR_VOLTAGE_TO_FORCE_FACTOR = 4.5  # Approximate Newtons per Volt
+
+
+class ESP32TelemetryFrame:
+    """Represents a validated timestamped sensor packet from ESP32."""
+    __slots__ = (
+        "seq",
+        "fsr_volts",
+        "fsr_forces_n",
+        "emg_volts",
+        "emg_activation",
+        "eeg_volts",
+        "esp_timestamp_ms",
+        "arrival_time",
+        "is_valid",
+    )
+
+    def __init__(
+        self,
+        seq: int = 0,
+        fsr_volts: list[float] = None,
+        emg_volts: float = 0.0,
+        eeg_volts: float = 0.0,
+        esp_timestamp_ms: int = 0,
+        is_valid: bool = True,
+    ):
+        self.seq = int(seq)
+        self.fsr_volts = fsr_volts or [0.0, 0.0, 0.0, 0.0]
+        # Calculate contact force in Newtons
+        self.fsr_forces_n = [float(v * FSR_VOLTAGE_TO_FORCE_FACTOR) for v in self.fsr_volts]
+        self.emg_volts = float(emg_volts)
+        # Normalize EMG voltage (0.0V to 3.0V -> 0.0 to 1.0 activation)
+        self.emg_activation = float(np.clip((self.emg_volts - 0.15) / 2.2, 0.0, 1.0))
+        self.eeg_volts = float(eeg_volts)
+        self.esp_timestamp_ms = int(esp_timestamp_ms)
+        self.arrival_time = time.time()
+        self.is_valid = is_valid
+
+    @property
+    def total_grip_force_n(self) -> float:
+        return sum(self.fsr_forces_n)
+
+    def __repr__(self):
+        f = self.fsr_forces_n
+        return (
+            f"ESP32Frame(seq={self.seq}, FSR_N=[Th:{f[0]:.1f}, In:{f[1]:.1f}, Mi:{f[2]:.1f}, Ri:{f[3]:.1f}], "
+            f"EMG_Act={self.emg_activation:.2f}, EEG_V={self.eeg_volts:.2f})"
+        )
+
+
+class AsyncESP32Receiver:
+    """
+    Non-blocking background thread that consumes serial telemetry from ESP32.
+    """
+    def __init__(self, port: str = "/dev/ttyTHS1", baud_rate: int = 115200, force_mock: bool = False):
+        self.port = port
+        self.baud_rate = baud_rate
+        self.force_mock = force_mock
+        self.serial_conn = None
+        self.running = False
+        self.thread = None
+        self.lock = threading.Lock()
+
+        # Telemetry State
+        self.latest_frame = ESP32TelemetryFrame(is_valid=False)
+        self.packet_count = 0
+        self.dropped_count = 0
+        self.last_seq = -1
+        self.is_connected = False
+
+        if not self.force_mock and SERIAL_AVAILABLE:
+            self._connect()
+
+    def _connect(self) -> bool:
+        """Attempts to open UART serial connection."""
+        try:
+            self.serial_conn = serial.Serial(self.port, self.baud_rate, timeout=0.1)
+            self.serial_conn.reset_input_buffer()
+            self.is_connected = True
+            logger.info(f"Connected to ESP32 Serial2 on {self.port} @ {self.baud_rate} Baud.")
+            return True
+        except Exception as e:
+            logger.warning(f"Could not open ESP32 UART port {self.port} ({e}). Falling back to simulation streamer.")
+            self.is_connected = False
+            return False
+
+    def start(self):
+        """Starts the background receiver thread."""
+        self.running = True
+        self.thread = threading.Thread(target=self._worker_loop, name="ESP32_Receiver_Thread", daemon=True)
+        self.thread.start()
+        logger.info("AsyncESP32Receiver thread started.")
+
+    def stop(self):
+        """Stops the receiver thread and closes serial port."""
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        if self.serial_conn and self.serial_conn.is_open:
+            try:
+                self.serial_conn.close()
+            except Exception:
+                pass
+        logger.info("AsyncESP32Receiver stopped.")
+
+    def _worker_loop(self):
+        """Continuous background loop deserializing incoming lines at 100 Hz."""
+        while self.running:
+            if not self.is_connected or self.serial_conn is None or not self.serial_conn.is_open:
+                # Simulation mode or waiting for reconnect
+                if not self.force_mock and SERIAL_AVAILABLE:
+                    time.sleep(2.0)
+                    self._connect()
+                    continue
+                else:
+                    self._generate_mock_frame()
+                    time.sleep(0.01)  # 100 Hz simulation
+                    continue
+
+            try:
+                line_bytes = self.serial_conn.readline()
+                if not line_bytes:
+                    continue
+
+                line_str = line_bytes.decode("utf-8", errors="ignore").strip()
+                if not (line_str.startswith("{") and line_str.endswith("}")):
+                    continue
+
+                # Parse JSON
+                data = json.loads(line_str)
+
+                # Validate expected fields
+                seq = data.get("seq", 0)
+                fsr = data.get("fsr", [0.0, 0.0, 0.0, 0.0])
+                emg = data.get("emg", 0.0)
+                eeg = data.get("eeg", 0.0)
+                ts  = data.get("ts", 0)
+
+                # Sequence continuity check
+                if self.last_seq != -1 and seq > (self.last_seq + 1):
+                    dropped = seq - (self.last_seq + 1)
+                    self.dropped_count += dropped
+
+                self.last_seq = seq
+                self.packet_count += 1
+
+                frame = ESP32TelemetryFrame(
+                    seq=seq,
+                    fsr_volts=fsr,
+                    emg_volts=emg,
+                    eeg_volts=eeg,
+                    esp_timestamp_ms=ts,
+                    is_valid=True,
+                )
+
+                with self.lock:
+                    self.latest_frame = frame
+
+            except json.JSONDecodeError:
+                continue
+            except Exception as e:
+                logger.error(f"Error in ESP32 UART receiver loop: {e}")
+                time.sleep(0.05)
+
+    def _generate_mock_frame(self):
+        """Generates realistic synthetic telemetry when physical UART is disconnected."""
+        t = time.time()
+        self.packet_count += 1
+        seq = self.packet_count
+
+        # Simulated baseline with occasional muscle contraction
+        sim_fsr = [
+            max(0.0, float(0.05 + 0.02 * np.sin(t * 2.0))),
+            max(0.0, float(0.04 + 0.02 * np.sin(t * 2.0 + 0.5))),
+            max(0.0, float(0.03 + 0.01 * np.sin(t * 2.0 + 1.0))),
+            max(0.0, float(0.02 + 0.01 * np.sin(t * 2.0 + 1.5))),
+        ]
+        sim_emg = float(0.18 + 0.05 * np.sin(t * 0.8))
+        sim_eeg = float(0.35 + 0.10 * np.sin(t * 10.0 * 2 * np.pi))
+
+        frame = ESP32TelemetryFrame(
+            seq=seq,
+            fsr_volts=sim_fsr,
+            emg_volts=sim_emg,
+            eeg_volts=sim_eeg,
+            esp_timestamp_ms=int(t * 1000) % 1000000,
+            is_valid=True,
+        )
+
+        with self.lock:
+            self.latest_frame = frame
+
+    def get_latest_frame(self) -> ESP32TelemetryFrame:
+        """Thread-safe accessor returning the most recent telemetry frame."""
+        with self.lock:
+            return self.latest_frame
+
+    def get_stats(self) -> dict:
+        """Returns link performance statistics."""
+        return {
+            "packets_received": self.packet_count,
+            "packets_dropped": self.dropped_count,
+            "connected": self.is_connected,
+        }

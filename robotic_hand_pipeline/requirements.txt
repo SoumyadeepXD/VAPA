@@ -1,0 +1,6 @@
+pyrealsense2>=2.55.1
+mediapipe>=0.10.14
+opencv-python>=4.9.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+pyserial>=3.5
