@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from actuation.arm_controller import ArmController
 from config.hardware_config import SERVO_CHANNELS
+from drivers.pca9685_actuator import VAPAActuatorController
 
 
 def print_menu():
@@ -24,8 +25,9 @@ def print_menu():
     print(" 3. Test Gripper Open / Close")
     print(" 4. Run Automated Joint Range Sweep (Calibrate Min/Max)")
     print(" 5. Move Arm to Home Pose")
-    print(" 6. Emergency Stop (Kill all PWM)")
-    print(" 7. Quit")
+    print(" 6. Direct VAPAActuatorController (CH 0-8) Low-Level Test")
+    print(" 7. Emergency Stop (Kill all PWM)")
+    print(" 8. Quit")
     print("=" * 60)
 
 
@@ -100,10 +102,26 @@ def run_servo_tool():
                 print("Arm at home.")
 
             elif choice == "6":
+                print("\nDirect Testing VAPAActuatorController (CH 0-8)...")
+                try:
+                    controller = VAPAActuatorController()
+                    print("Testing CH 0 (finger_thumb) -> 90°...")
+                    controller.set_servo_angle("finger_thumb", 90)
+                    time.sleep(0.5)
+                    print("Testing CH 5 (arm_base_yaw) -> 45°...")
+                    controller.set_servo_angle("arm_base_yaw", 45)
+                    time.sleep(0.5)
+                    print("Testing CH 8 (wrist_pitch) -> 30°...")
+                    controller.set_servo_angle("wrist_pitch", 30)
+                    print("Direct controller test complete.")
+                except Exception as e:
+                    print(f"Direct actuator test note/error: {e}")
+
+            elif choice == "7":
                 print("Emergency Stop Triggered!")
                 arm.emergency_stop()
 
-            elif choice == "7" or choice.lower() == "q":
+            elif choice == "8" or choice.lower() == "q":
                 break
 
     finally:

@@ -47,80 +47,106 @@ ENCODER_MUX_CHANNELS = {
 }
 
 # ==============================================================================
-# 3. 12-SERVO CHANNEL MAP & CALIBRATION TABLE (PCA9685 @ 0x40)
+# 3. SERVO CHANNEL MAP & CALIBRATION TABLE (PCA9685 @ 0x40)
 # ==============================================================================
-# Drives 12 total servos: 3x DS3225 (High-Torque), 1x DS3218, 8x MG90S/SG90
+# Direct mapping from drivers/pca9685_actuator.py:
+# - Fingers (CH 0-4): 5x MG996R Servos
+# - Heavy Arm Joints (CH 5-7): 3x DS3225 25kg Servos
+# - Wrist Pitch (CH 8): 1x DS3218 20kg Servo
 SERVO_CHANNELS = {
-    # Joint 1: Base Yaw (Waist Swivel) - DS3225 25kg Servo
+    # Fingers: 5x MG996R Servos (CH 0 to CH 4)
+    "finger_thumb": {
+        "channel": 0, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "finger_index": {
+        "channel": 1, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "finger_middle": {
+        "channel": 2, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "finger_ring": {
+        "channel": 3, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "finger_pinky": {
+        "channel": 4, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    # Heavy Joint Arm: 3x DS3225 Servos (CH 5 to CH 7)
+    "arm_base_yaw": {
+        "channel": 5, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "arm_shoulder_pitch": {
+        "channel": 6, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "arm_elbow_pitch": {
+        "channel": 7, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 45.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    # Wrist Pitch: 1x DS3218 Servo (CH 8)
+    "wrist_pitch": {
+        "channel": 8, "type": "DS3218", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+
+    # --- Kinematic Model Compatibility Aliases ---
     "joint_1_base_yaw": {
-        "channel": 0, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "channel": 5, "type": "DS3225", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
-    # Joint 2: Shoulder Pitch (Lift) - DS3225 25kg Servo
     "joint_2_shoulder_pitch": {
-        "channel": 1, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "channel": 6, "type": "DS3225", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
-    # Joint 3: Elbow Pitch (Flexion) - DS3225 25kg Servo
     "joint_3_elbow_pitch": {
-        "channel": 2, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "channel": 7, "type": "DS3225", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 45.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
-    # Joint 4: Wrist Pitch (Flexion/Tilt) - DS3218 20kg Servo
     "joint_4_wrist_pitch": {
-        "channel": 3, "type": "DS3218", "min_us": 500, "max_us": 2500,
+        "channel": 8, "type": "DS3218", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
-    # Joint 5: Wrist Roll (Pronation/Supination) - MG90S Micro Servo
-    "joint_5_wrist_roll": {
-        "channel": 4, "type": "MG90S", "min_us": 500, "max_us": 2500,
-        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
-        "center_offset_deg": 0.0, "direction": 1,
-    },
-    # Joint 6: Wrist Yaw (Deviation) - MG90S Micro Servo
-    "joint_6_wrist_yaw": {
-        "channel": 5, "type": "MG90S", "min_us": 500, "max_us": 2500,
-        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
-        "center_offset_deg": 0.0, "direction": 1,
-    },
-    # Finger 1: Thumb Flexion - MG90S Micro Servo
     "finger_thumb_flex": {
-        "channel": 6, "type": "MG90S", "min_us": 500, "max_us": 2500,
+        "channel": 0, "type": "MG996R", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
-    # Finger 2: Index Flexion - MG90S Micro Servo
     "finger_index_flex": {
-        "channel": 7, "type": "MG90S", "min_us": 500, "max_us": 2500,
+        "channel": 1, "type": "MG996R", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
-    # Finger 3: Middle Flexion - MG90S Micro Servo
     "finger_middle_flex": {
-        "channel": 8, "type": "MG90S", "min_us": 500, "max_us": 2500,
+        "channel": 2, "type": "MG996R", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
-    # Finger 4: Ring Flexion - MG90S Micro Servo
     "finger_ring_flex": {
-        "channel": 9, "type": "MG90S", "min_us": 500, "max_us": 2500,
+        "channel": 3, "type": "MG996R", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
-    # Finger 5: Pinky Flexion - MG90S Micro Servo
     "finger_pinky_flex": {
-        "channel": 10, "type": "MG90S", "min_us": 500, "max_us": 2500,
+        "channel": 4, "type": "MG996R", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
-        "center_offset_deg": 0.0, "direction": 1,
-    },
-    # Thumb Abduction / Opposition - MG90S Micro Servo
-    "finger_thumb_abduct": {
-        "channel": 11, "type": "MG90S", "min_us": 500, "max_us": 2500,
-        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 45.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
 }
@@ -138,17 +164,26 @@ NUM_EEG_CHANNELS = 4
 SERIAL_SERVO_PORT = "/dev/ttyTHS1"
 SERIAL_SERVO_BAUD_RATE = 1000000
 
-# ESP32 ADC Channel Mapping (Over UART JSON Stream)
-# ADS1115 #1 (0x48): FSR Tactile Sensors
+# 5x FSR Sensors on ESP32 Analog Pins (GPIO 32, 33, 34, 35, 36)
 FSR_CHANNELS = {
     0: "fsr_thumb",
     1: "fsr_index",
     2: "fsr_middle",
     3: "fsr_ring",
+    4: "fsr_pinky",
 }
 
-# ADS1115 #2 (0x49): Bio-Signals
+FSR_ESP32_PINS = {
+    0: 32,  # Thumb (GPIO 32)
+    1: 33,  # Index (GPIO 33)
+    2: 34,  # Middle (GPIO 34)
+    3: 35,  # Ring (GPIO 35)
+    4: 36,  # Pinky (GPIO 36)
+}
+
+# Single ADS1115 (0x48): Bio-Signals (A0 = MyoWare EMG, A1 = EEG Output)
+ADS1115_BIO_ADDR = 0x48
 BIO_CHANNELS = {
-    0: "emg_myoware",   # MyoWare 2.0 EMG
-    1: "eeg_brainwave", # Analog EEG module
+    0: "emg_myoware",   # ADS1115 A0: MyoWare EMG
+    1: "eeg_brainwave", # ADS1115 A1: EEG Output
 }
