@@ -1,3 +1,5 @@
+
+
 """
 VAPA 12-Channel PCA9685 Servo Driver & Motion Controller
 Direct I2C communication on NVIDIA Jetson Orin (/dev/i2c-1 @ 0x40).
@@ -23,20 +25,23 @@ LED0_OFF_L          = 0x08
 LED0_OFF_H          = 0x09
 ALL_LED_OFF_H       = 0xFD
 
-# Servo Configuration Table aligned with drivers/pca9685_actuator.py
+# 12-Channel Servo Configuration Table
 SERVO_12CH_CONFIG = {
-    # Fingers: 5x MG996R Servos (CH 0 to CH 4)
-    0:  {"name": "finger_thumb",          "type": "MG996R", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
-    1:  {"name": "finger_index",          "type": "MG996R", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
-    2:  {"name": "finger_middle",         "type": "MG996R", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
-    3:  {"name": "finger_ring",           "type": "MG996R", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
-    4:  {"name": "finger_pinky",          "type": "MG996R", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
-    # Heavy Joint Arm: 3x DS3225 Servos (CH 5 to CH 7)
-    5:  {"name": "arm_base_yaw",          "type": "DS3225", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 90.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 90.0},
-    6:  {"name": "arm_shoulder_pitch",     "type": "DS3225", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 90.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 75.0},
-    7:  {"name": "arm_elbow_pitch",        "type": "DS3225", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 45.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 90.0},
-    # Wrist Pitch: 1x DS3218 Servo (CH 8)
-    8:  {"name": "wrist_pitch",            "type": "DS3218", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 90.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 120.0},
+    # Heavy Joints (3x DS3225 25kg High-Torque Servos)
+    0:  {"name": "joint_1_base_yaw",       "type": "DS3225", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 90.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 90.0},
+    1:  {"name": "joint_2_shoulder_pitch",  "type": "DS3225", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 90.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 75.0},
+    2:  {"name": "joint_3_elbow_pitch",     "type": "DS3225", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 45.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 90.0},
+    # Wrist Pitch (1x DS3218 20kg Servo)
+    3:  {"name": "joint_4_wrist_pitch",     "type": "DS3218", "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 90.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 120.0},
+    # Wrist Orientations & Micro Articulations (8x MG90S/SG90 Micro Servos)
+    4:  {"name": "joint_5_wrist_roll",      "type": "MG90S",  "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 90.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 150.0},
+    5:  {"name": "joint_6_wrist_yaw",       "type": "MG90S",  "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 90.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 150.0},
+    6:  {"name": "finger_thumb_flex",       "type": "MG90S",  "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
+    7:  {"name": "finger_index_flex",       "type": "MG90S",  "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
+    8:  {"name": "finger_middle_flex",      "type": "MG90S",  "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
+    9:  {"name": "finger_ring_flex",        "type": "MG90S",  "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
+    10: {"name": "finger_pinky_flex",       "type": "MG90S",  "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 0.0,  "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 200.0},
+    11: {"name": "finger_thumb_abduct",     "type": "MG90S",  "min_us": 500, "max_us": 2500, "min_deg": 0.0, "max_deg": 180.0, "home_deg": 45.0, "trim_deg": 0.0, "direction": 1, "max_speed_deg_s": 180.0},
 }
 
 
@@ -56,21 +61,8 @@ class PCA9685_12ChDriver:
 
         # Track current & target angles for all 12 channels
         self.current_angles = {ch: cfg["home_deg"] for ch, cfg in SERVO_12CH_CONFIG.items()}
+        self.target_angles  = {ch: cfg["home_deg"] for ch, cfg in SERVO_12CH_CONFIG.items()}
         self.name_to_channel = {cfg["name"]: ch for ch, cfg in SERVO_12CH_CONFIG.items()}
-        # Add aliases for joint kinematics compatibility
-        aliases = {
-            "joint_1_base_yaw": 5,
-            "joint_2_shoulder_pitch": 6,
-            "joint_3_elbow_pitch": 7,
-            "joint_4_wrist_pitch": 8,
-            "finger_thumb_flex": 0,
-            "finger_index_flex": 1,
-            "finger_middle_flex": 2,
-            "finger_ring_flex": 3,
-            "finger_pinky_flex": 4,
-        }
-        for alias_k, ch_idx in aliases.items():
-            self.name_to_channel.setdefault(alias_k, ch_idx)
 
         if not self.force_mock:
             self._init_hardware()
@@ -224,18 +216,18 @@ class PCA9685_12ChDriver:
 
     def set_hand_opening_percent(self, percent: float, duration_s: float = 0.5):
         """
-        Simultaneously drives all 5 finger flexor servos (Channels 0 to 4):
+        Simultaneously drives all 5 finger flexor servos (Channels 6 to 10):
         0.0% = Closed fist, 100.0% = Fully open hand.
         """
         percent = float(np.clip(percent, 0.0, 100.0))
         # 0% open -> 180 deg flex (closed), 100% open -> 0 deg flex (open)
         flex_deg = (1.0 - (percent / 100.0)) * 180.0
         finger_dict = {
-            0: flex_deg,  # Thumb (CH 0)
-            1: flex_deg,  # Index (CH 1)
-            2: flex_deg,  # Middle (CH 2)
-            3: flex_deg,  # Ring (CH 3)
-            4: flex_deg,  # Pinky (CH 4)
+            6: flex_deg,  # Thumb
+            7: flex_deg,  # Index
+            8: flex_deg,  # Middle
+            9: flex_deg,  # Ring
+            10: flex_deg, # Pinky
         }
         self.soft_move(finger_dict, duration_s=duration_s)
 
