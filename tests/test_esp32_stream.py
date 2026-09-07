@@ -37,10 +37,13 @@ def main():
                 stats = receiver.get_stats()
 
                 f = frame.fsr_forces_n
+                pi_f = f[4] if len(f) > 4 else 0.0
+                enc_deg = frame.encoder_angle_deg
                 sys.stdout.write(
                     f"\r[Seq:{frame.seq:6d}] "
-                    f"FSR(N): [Th:{f[0]:4.1f} In:{f[1]:4.1f} Mi:{f[2]:4.1f} Ri:{f[3]:4.1f}] "
+                    f"FSR(N): [Th:{f[0]:4.1f} In:{f[1]:4.1f} Mi:{f[2]:4.1f} Ri:{f[3]:4.1f} Pi:{pi_f:4.1f}] "
                     f"Tot:{frame.total_grip_force_n:4.1f}N | "
+                    f"Enc:{enc_deg:5.1f}° | "
                     f"EMG_Act:{frame.emg_activation:4.2f} (V:{frame.emg_volts:.2f}V) | "
                     f"EEG_V:{frame.eeg_volts:.2f}V | "
                     f"Rx:{stats['packets_received']} Drop:{stats['packets_dropped']}"

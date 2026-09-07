@@ -177,12 +177,13 @@ Raw EMG/EEG Stream (1000Hz / 250Hz)
 ## 6. Directory Structure & Key Code References
 
 - [`architecture.md`](file:///home/iedc_ai_dgx1/Documents/VAPA/architecture.md): Complete circuit diagrams, power architecture, and wiring specs.
-- [`firmware/esp32_sensor_node/esp32_sensor_node.ino`](file:///home/iedc_ai_dgx1/Documents/VAPA/firmware/esp32_sensor_node/esp32_sensor_node.ino): ESP32 C++ firmware (Dual ADS1115 + 100Hz JSON Serial2).
+- [`firmware/esp32_sensor_node/src/main.cpp`](file:///home/iedc_ai_dgx1/Documents/VAPA/firmware/esp32_sensor_node/src/main.cpp): ESP32 C++ firmware (Single ADS1115 + 5x FSRs + AS5600 Encoders + 100Hz JSON Serial2).
+- [`drivers/pca9685_actuator.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/drivers/pca9685_actuator.py): VAPAActuatorController (5x MG996R Fingers CH 0-4, 3x DS3225 Arm CH 5-7, 1x DS3218 Wrist CH 8).
+- [`drivers/pca9685_12ch_driver.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/drivers/pca9685_12ch_driver.py): 12-Channel Servo Driver with soft-start velocity curves.
 - [`drivers/tca9548a_as5600.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/drivers/tca9548a_as5600.py): TCA9548A I2C Multiplexer & 4x AS5600 Magnetic Encoder driver.
-- [`drivers/pca9685_12ch_driver.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/drivers/pca9685_12ch_driver.py): 12-Channel Servo Driver (3x DS3225, 1x DS3218, 8x MG90S).
-- [`biosignals/esp32_serial_receiver.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/biosignals/esp32_serial_receiver.py): High-speed async UART telemetry receiver for ESP32.
+- [`biosignals/esp32_serial_receiver.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/biosignals/esp32_serial_receiver.py): High-speed async UART telemetry receiver for ESP32 (5x FSRs, EMG, EEG, Encoders).
 - [`config/system_config.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/config/system_config.py): Global dimensions, limits, filter thresholds.
-- [`config/hardware_config.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/config/hardware_config.py): Jetson Orin pinout, 12-servo map, I2C addresses, UART specs.
+- [`config/hardware_config.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/config/hardware_config.py): Jetson Orin pinout, PCA9685 servo channel map, I2C addresses, UART specs.
 - [`vision/realsense_camera.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/vision/realsense_camera.py): RealSense RGB-D capture + Synthetic simulation fallback.
 - [`vision/object_detector.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/vision/object_detector.py): Multi-backend object detector (MediaPipe, YOLO, 3D Depth Segmenter).
 - [`vision/spatial_3d.py`](file:///home/iedc_ai_dgx1/Documents/VAPA/vision/spatial_3d.py): 3D deprojection, base frame transform, grasp pose planning.
