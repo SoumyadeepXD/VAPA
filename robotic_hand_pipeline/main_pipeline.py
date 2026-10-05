@@ -24,7 +24,7 @@ def main():
             if color is None:
                 continue
 
-            detections = detector.detect(color)
+            detections = detector.detect(color, depth_image_m=depth_m)
             vis = draw_detections(color, detections)
             cv2.imshow("Pipeline", vis)
 

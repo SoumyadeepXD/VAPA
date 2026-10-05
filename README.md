@@ -38,6 +38,180 @@
 
 ---
 
+## 📐 Mathematical Foundations & Algorithmic Principles
+
+VAPA relies on closed-loop mathematical formulations bridging 3D visual perception, biological neural/muscular decoders, kinematics, and smooth actuator dynamics.
+
+```
+ [ RGB-D Pixel (u, v) + Z_c ] ──► [ Deprojection (X_c, Y_c, Z_c) ] ──► [ T_base_cam ] ──► Target X_B, Y_B, Z_B
+                                                                                               │
+ [ Raw EMG / EEG (ADC V) ] ──► [ IIR Notch + Bandpass ] ──► [ RMS / ERD ] ──► Intent & Force  │
+                                                                                    │          │
+                                                                                    ▼          ▼
+                                                   [ Closed-Form & DLS IK ] ◄───────┴──────────┘
+                                                                │
+                                                                ▼
+                                                [ Quintic Minimum-Jerk s(tau) ]
+                                                                │
+                                                                ▼
+                                                [ PCA9685 PWM Ticks & Soft-Move ]
+```
+
+### 1. 3D Spatial Perception & Coordinate Transformations
+
+#### A. Pinhole Camera Deprojection
+Given pixel coordinates $(u, v)$ on the RGB-D sensor, measured metric depth $Z_C = \text{depth}(u, v)$, focal lengths $(f_x, f_y)$, and optical center $(c_x, c_y)$, the 3D metric coordinates in the **Camera Optical Frame** ($C$) are:
+
+$$X_C = \frac{(u - c_x) \cdot Z_C}{f_x}, \quad Y_C = \frac{(v - c_y) \cdot Z_C}{f_y}, \quad Z_C = \text{depth}(u, v)$$
+
+*Frame Convention*:
+* **Camera Optical Frame ($C$)**: $+X_C$ right, $+Y_C$ down, $+Z_C$ forward along optical axis.
+* **Robot Arm Base Frame ($B$)**: $+X_B$ forward, $+Y_B$ left, $+Z_B$ upward vertical swivel axis.
+
+#### B. Homogeneous Frame Transformation
+The transformation from Camera Optical frame ($C$) to Robot Base frame ($B$) combines intrinsic optical-to-robot axis alignment $\mathbf{R}_{\text{opt}\to\text{rob}}$, physical mounting rotation $\mathbf{R}_{\text{mount}}(\phi, \theta, \psi)$, and translation $\mathbf{t}_B^C$:
+
+$$\mathbf{R}_{\text{opt}\to\text{rob}} = \begin{bmatrix} 0 & 0 & 1 \\ -1 & 0 & 0 \\ 0 & -1 & 0 \end{bmatrix}, \quad \mathbf{R}_{\text{mount}} = \mathbf{R}_z(\psi) \mathbf{R}_y(\theta) \mathbf{R}_x(\phi)$$
+
+$$\mathbf{T}_B^C = \begin{bmatrix} \mathbf{R}_B^C & \mathbf{t}_B^C \\ \mathbf{0}^T & 1 \end{bmatrix} = \begin{bmatrix} \mathbf{R}_{\text{mount}} \cdot \mathbf{R}_{\text{opt}\to\text{rob}} & \mathbf{t}_B^C \\ \mathbf{0}^T & 1 \end{bmatrix}$$
+
+$$\begin{bmatrix} X_B \\ Y_B \\ Z_B \\ 1 \end{bmatrix} = \mathbf{T}_B^C \begin{bmatrix} X_C \\ Y_C \\ Z_C \\ 1 \end{bmatrix}$$
+
+#### C. Metric Object Dimensions & Adaptive Grasping
+Object physical width $W_{\text{obj}}$ and height $H_{\text{obj}}$ are derived by deprojecting bounding box perimeter coordinates:
+
+$$W_{\text{obj}} = \|\mathbf{P}_{3D}(x_{\max}, y_{\text{mid}}) - \mathbf{P}_{3D}(x_{\min}, y_{\text{mid}})\|_2$$
+
+The required gripper aperture $W_{\text{target}}$ and adaptive gripping force $F_{\text{target}}$ scale dynamically:
+
+$$W_{\text{target}} = \text{clip}(W_{\text{obj}} + \delta_{\text{clearance}}, W_{\min}, W_{\max}) \quad (\delta_{\text{clearance}} = 0.020\text{ m})$$
+
+$$F_{\text{target}} = F_{\min} + (F_{\max} - F_{\min}) \cdot \min\left(1.0, \frac{W_{\text{obj}}}{0.08}\right)$$
+
+---
+
+### 2. Forward Kinematics (FK)
+
+The kinematic chain defines 5 planar link offsets:
+* $L_1$: Base pedestal height ($0.100\text{ m}$)
+* $L_2$: Upper arm link length ($0.145\text{ m}$)
+* $L_3$: Forearm link length ($0.140\text{ m}$)
+* $L_4$: Wrist to palm offset ($0.065\text{ m}$)
+* $L_5$: Palm to Tool Center Point (TCP) ($0.070\text{ m}$)
+
+Given joint angles $\mathbf{q} = [q_1, q_2, q_3, q_4, q_5]$ (Base Yaw, Shoulder Pitch, Elbow Pitch, Wrist Pitch, Wrist Roll):
+
+1. **Planar Pitch Accumulation**:
+   $$\theta_{\text{upper}} = q_2, \quad \theta_{\text{fore}} = q_2 + q_3, \quad \theta_{\text{wrist}} = q_2 + q_3 + q_4$$
+
+2. **Radial and Vertical Projections**:
+   $$r_{\text{elbow}} = L_2 \cos(q_2), \quad z_{\text{elbow}} = L_1 + L_2 \sin(q_2)$$
+   $$r_{\text{wrist}} = r_{\text{elbow}} + L_3 \cos(\theta_{\text{fore}}), \quad z_{\text{wrist}} = z_{\text{elbow}} + L_3 \sin(\theta_{\text{fore}})$$
+   $$r_{\text{palm}} = r_{\text{wrist}} + L_4 \cos(\theta_{\text{wrist}}), \quad z_{\text{palm}} = z_{\text{wrist}} + L_4 \sin(\theta_{\text{wrist}})$$
+   $$r_{\text{tcp}} = r_{\text{palm}} + L_5 \cos(\theta_{\text{wrist}}), \quad z_{\text{tcp}} = z_{\text{palm}} + L_5 \sin(\theta_{\text{wrist}})$$
+
+3. **3D Cartesian Tool Center Point**:
+   $$\mathbf{p}_{\text{tcp}} = \begin{bmatrix} X_B \\ Y_B \\ Z_B \end{bmatrix} = \begin{bmatrix} r_{\text{tcp}} \cos(q_1) \\ r_{\text{tcp}} \sin(q_1) \\ z_{\text{tcp}} \end{bmatrix}, \quad \text{RPY} = \begin{bmatrix} q_5 \\ \theta_{\text{wrist}} \\ q_1 \end{bmatrix}$$
+
+---
+
+### 3. Inverse Kinematics (IK)
+
+#### A. Analytical Closed-Form Geometric Solution
+For a 3D target $[X_B, Y_B, Z_B]$ with approach pitch $\theta_{\text{pitch}}$ and roll $\theta_{\text{roll}}$:
+
+1. **Base Yaw ($q_1$)**:
+   $$q_1 = \text{atan2}(Y_B, X_B)$$
+
+2. **Wrist Center Coordinates ($r_w, z_w$)**:
+   $$r_{\text{total}} = \sqrt{X_B^2 + Y_B^2}, \quad L_{\text{wrist}} = L_4 + L_5$$
+   $$r_w = r_{\text{total}} - L_{\text{wrist}} \cos(\theta_{\text{pitch}}), \quad z_w = Z_B - L_1 - L_{\text{wrist}} \sin(\theta_{\text{pitch}})$$
+
+3. **Reachability Check**:
+   $$d = \sqrt{r_w^2 + z_w^2}, \quad |L_2 - L_3| \le d \le (L_2 + L_3)$$
+
+4. **Elbow Pitch ($q_3$) via Law of Cosines**:
+   $$\cos(q_3) = \frac{r_w^2 + z_w^2 - L_2^2 - L_3^2}{2 L_2 L_3}$$
+   $$q_3 = \text{atan2}\left(-\sqrt{1 - \cos^2(q_3)}, \cos(q_3)\right) \quad (\text{Elbow-up})$$
+
+5. **Shoulder Pitch ($q_2$)**:
+   $$\alpha = \text{atan2}(z_w, r_w), \quad \beta = \text{atan2}\left(L_3 \sin(-q_3), L_2 + L_3 \cos(q_3)\right)$$
+   $$q_2 = \alpha + \beta$$
+
+6. **Wrist Pitch ($q_4$)**:
+   $$q_4 = \theta_{\text{pitch}} - (q_2 + q_3)$$
+
+#### B. Numerical Damped Least Squares (DLS) Jacobian Solver
+When nearing kinematic singularities or joint limits, VAPA switches to DLS numerical refinement. For position error $\mathbf{e} = \mathbf{p}_{\text{target}} - f_{\text{FK}}(\mathbf{q})$ and numerical Jacobian $\mathbf{J} \in \mathbb{R}^{3 \times 4}$:
+
+$$\mathbf{J}_{:, j} = \frac{f_{\text{FK}}(\mathbf{q} + \epsilon \hat{\mathbf{e}}_j) - f_{\text{FK}}(\mathbf{q})}{\epsilon}$$
+
+$$\Delta \mathbf{q} = \mathbf{J}^T \left( \mathbf{J} \mathbf{J}^T + \lambda^2 \mathbf{I}_{3 \times 3} \right)^{-1} \mathbf{e}$$
+
+where damping coefficient $\lambda = 0.05$ stabilizes inversion across singular postures.
+
+---
+
+### 4. Minimum-Jerk Smooth Trajectory Interpolation
+
+To eliminate motor gearbox shudder and inertial vibration, trajectories minimize the integral of squared jerk:
+
+$$\min_{\mathbf{q}(t)} \int_0^T \left\| \frac{d^3 \mathbf{q}(t)}{dt^3} \right\|^2 dt$$
+
+subject to boundary constraints $\mathbf{q}(0) = \mathbf{q}_0, \mathbf{q}(T) = \mathbf{q}_1, \dot{\mathbf{q}}(0) = \dot{\mathbf{q}}(T) = \mathbf{0}, \ddot{\mathbf{q}}(0) = \ddot{\mathbf{q}}(T) = \mathbf{0}$.
+
+The solution is a **quintic polynomial** parameterized by normalized time $\tau = \frac{t}{T} \in [0, 1]$:
+
+$$s(\tau) = 10\tau^3 - 15\tau^4 + 6\tau^5$$
+
+$$\dot{s}(\tau) = \frac{1}{T} \left( 30\tau^2 - 60\tau^3 + 30\tau^4 \right)$$
+
+$$\ddot{s}(\tau) = \frac{1}{T^2} \left( 60\tau - 180\tau^2 + 120\tau^3 \right)$$
+
+Joint position and velocity profiles are evaluated at 50 Hz:
+
+$$\mathbf{q}(t) = \mathbf{q}_{\text{start}} + (\mathbf{q}_{\text{target}} - \mathbf{q}_{\text{start}}) \cdot s(\tau)$$
+$$\dot{\mathbf{q}}(t) = (\mathbf{q}_{\text{target}} - \mathbf{q}_{\text{start}}) \cdot \dot{s}(\tau)$$
+
+---
+
+### 5. Biosignal DSP & Decoding Pipeline
+
+#### A. Digital Filter Formulations
+* **IIR Notch Filter** (50 Hz / 60 Hz powerline hum rejection, quality factor $Q = 30$):
+  $$H_{\text{notch}}(z) = b_0 \frac{1 - 2\cos(\omega_0) z^{-1} + z^{-2}}{1 - 2 r \cos(\omega_0) z^{-1} + r^2 z^{-2}}, \quad \omega_0 = \frac{2\pi f_{\text{notch}}}{f_s}$$
+
+* **4th-Order Butterworth Bandpass**:
+  $$|H(j\omega)|^2 = \frac{1}{1 + \left( \frac{\omega^2 - \omega_0^2}{\omega \cdot \text{BW}} \right)^8}$$
+  * EMG band: $20\text{ Hz} \le f \le 450\text{ Hz}$
+  * EEG band: $1\text{ Hz} \le f \le 45\text{ Hz}$
+
+#### B. Surface EMG Muscle Envelope & Proportional Grip
+* **Moving RMS Window** ($W = 50\text{ samples}$):
+  $$\text{RMS}[k] = \sqrt{\frac{1}{W} \sum_{i=0}^{W-1} x^2[k - i]}$$
+
+* **Normalized Muscle Activation**:
+  $$\text{Act} = \text{clip}\left( \frac{\text{RMS} - \text{RMS}_{\text{base}}}{\text{RMS}_{\max} - \text{RMS}_{\text{base}}}, 0.0, 1.0 \right)$$
+
+* **Continuous Proportional Grasp Force**:
+  $$F_{\text{grip}} = F_{\min} + (F_{\max} - F_{\min}) \cdot \text{Act}_{\text{flexor}} \quad (F_{\min}=0.3\text{ N}, F_{\max}=10.0\text{ N})$$
+
+* **Co-Contraction Safety Abort**:
+  $$\text{Act}_{\text{flexor}} > 0.85 \quad \land \quad \text{Act}_{\text{extensor}} > 0.85 \implies \text{EMERGENCY\_STOP}$$
+
+#### C. EEG Motor Imagery & Attention Trigger
+* **FFT Power Spectral Density**:
+  $$P(f) = \frac{1}{N} \left| \sum_{n=0}^{N-1} x[n] e^{-j 2\pi f n / f_s} \right|^2$$
+
+* **Event-Related Desynchronization (ERD)** in Mu band ($8-12\text{ Hz}$):
+  $$\text{ERD} = \frac{P_{\mu, \text{rest}} - P_{\mu, \text{active}}}{P_{\mu, \text{rest}} + \epsilon}$$
+  $$\text{ERD} > 0.35 \implies \text{Intent to Reach Triggered}$$
+
+* **Cognitive Focus / Attention Ratio**:
+  $$\text{Attention} = \text{clip}\left( \frac{P_\beta}{P_\mu + \epsilon} \cdot 0.7, 0.0, 1.0 \right) > 0.60 \implies \text{Target Lock Confirmation}$$
+
+---
+
 ## 🛠️ Hardware Requirements & Bill of Materials
 
 | Component | Recommended Model | Interface to Jetson |

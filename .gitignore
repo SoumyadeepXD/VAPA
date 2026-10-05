@@ -2,3 +2,6 @@ robotic_hand_pipeline/vapa/
 __pycache__/
 *.pyc
 .env
+.venv
+venv/
+

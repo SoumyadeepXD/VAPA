@@ -183,7 +183,156 @@ The ESP32 continuously transmits JSON telemetry frames to the Jetson Orin over *
 
 ---
 
-## 5. Complete Repository Folder Structure
+## 5. Electrical Engineering & Signal Conditioning Mathematics
+
+This section provides the rigorous circuit equations, component ratings, and digital signal transformations governing VAPA's hardware nodes.
+
+```
+ [ 3S LiPo 11.1V-12.6V ] ──► [ Buck 6V @ 10-15A ] ──► [ 4700µF Low-ESR Decoupling ] ──► PCA9685 Servos
+                                                                                               │
+ [ FSR 402 + 10kΩ ] ────► [ RC LPF (fc = 159Hz) ] ──► [ ADS1115 16-bit ADC ] ──► EMA Filter ──► ESP32 UART
+                                                                                               │
+ [ Jetson Orin /dev/i2c-1 ] ────► [ Prescale = 121 (50Hz) ] ──► [ 12-bit Tick Mapping ] ───────┘
+```
+
+### A. Power Budget, Battery Sizing & Decoupling Capacitor Derivation
+
+#### 1. 3S LiPo Battery Discharge Model
+* **Operating Range**:
+  $$V_{\text{nominal}} = 3 \times 3.7\text{ V} = 11.1\text{ V}, \quad V_{\max} = 3 \times 4.2\text{ V} = 12.6\text{ V}, \quad V_{\text{cutoff}} = 3 \times 3.2\text{ V} = 9.6\text{ V}$$
+* **Discharge Capability**:
+  For a $2200\text{ mAh}$, $30\text{C}$ pack:
+  $$I_{\text{continuous\_max}} = C_{\text{rate}} \times \text{Capacity} = 30\text{ h}^{-1} \times 2.2\text{ Ah} = 66.0\text{ A}$$
+  Protected downstream by a $30\text{ A}$ automotive blade fuse ($I_{\text{fuse}} < \frac{1}{2} I_{\text{continuous\_max}}$).
+
+#### 2. System Power Dissipation
+* **Jetson Orin (15W power profile)**: $P_{\text{Jetson}} \approx 15.0\text{ W} \implies I_{12\text{V}} \approx 1.25\text{ A}$
+* **Servos Peak Draw (worst-case multi-joint lift)**:
+  $$P_{\text{servos}} = V_{\text{rail}} \cdot I_{\text{peak}} = 6.0\text{ V} \times 12.0\text{ A} = 72.0\text{ W}$$
+* **Logic BEC & Microcontrollers**: $P_{\text{logic}} \approx 5.0\text{ V} \times 0.6\text{ A} = 3.0\text{ W}$
+* **Peak Power Sum**:
+  $$P_{\text{peak}} \approx 15.0\text{ W} + 72.0\text{ W} + 3.0\text{ W} = 90.0\text{ W} \quad (\approx 8.1\text{ A @ } 11.1\text{ V})$$
+* **Buck Converter Thermal Loss** ($\eta \approx 92\%$ efficiency):
+  $$P_{\text{loss}} = P_{\text{out}} \left( \frac{1 - \eta}{\eta} \right) = 72.0\text{ W} \times \left(\frac{0.08}{0.92}\right) = 6.26\text{ W}$$
+
+#### 3. Servo Inrush Decoupling Capacitor Sizing ($4700\mu\text{F}$)
+Simultaneous acceleration of heavy DS3225 joints pulls step current transients $\Delta I = 10.0\text{ A}$ across buck switching loop response time $\Delta t \approx 2.0\text{ ms}$. To guarantee supply droop $\Delta V_{\text{ripple}} \le 0.5\text{ V}$ (preventing servo controller resets and logic brownouts):
+
+$$C \ge \frac{\Delta I \cdot \Delta t}{\Delta V_{\text{ripple}}} = \frac{10.0\text{ A} \times 2.0 \times 10^{-3}\text{ s}}{0.5\text{ V}} = 4.0 \times 10^{-3}\text{ F} = 4000\,\mu\text{F}$$
+
+*Component Selection*: **$4700\,\mu\text{F} / 16\text{V}$ Low-ESR ($< 25\text{ m}\Omega$) Electrolytic Capacitor** wired directly across the PCA9685 $V_+$ and GND screw terminals.
+
+---
+
+### B. Sensor Signal Conditioning & ADC Transfer Functions
+
+#### 1. ADS1115 16-Bit Sigma-Delta ADC Resolution
+Configured with internal Programmable Gain Amplifier (PGA) at `GAIN_ONE` ($\pm 4.096\text{ V}$ Full-Scale Range):
+
+$$\text{LSB Resolution} = \frac{V_{\text{FSR}}}{2^{15} - 1} = \frac{4.096\text{ V}}{32767} = 1.25 \times 10^{-4}\text{ V} = 125.0\,\mu\text{V/bit}$$
+
+Voltage conversion formula implemented in firmware:
+
+$$V_{\text{measured}} = \max\left(0, N_{\text{raw}}\right) \times 0.000125\text{ V}$$
+
+#### 2. FSR 402 Fingertip Force Sensor Circuit
+Each FSR forms a voltage divider with reference $V_{\text{ref}} = 3.3\text{ V}$ and pull-down resistor $R_{\text{fixed}} = 10\text{ k}\Omega$:
+
+$$V_{\text{out}} = V_{\text{ref}} \cdot \frac{R_{\text{fixed}}}{R_{\text{FSR}}(F) + R_{\text{fixed}}}$$
+
+Inverting for the instantaneous piezoresistive sensor resistance $R_{\text{FSR}}$:
+
+$$R_{\text{FSR}} = R_{\text{fixed}} \left( \frac{V_{\text{ref}}}{V_{\text{out}}} - 1 \right) = 10000 \cdot \left( \frac{3.3}{V_{\text{out}}} - 1 \right)\,\Omega$$
+
+Applied normal force scales as $F \propto R_{\text{FSR}}^{-\gamma} \approx \left( \frac{V_{\text{out}}}{V_{\text{ref}} - V_{\text{out}}} \right)^{1/\gamma}$ (with empirical exponent $\gamma \approx 0.85$).
+
+#### 3. Analog RC Anti-Aliasing Filter
+Each analog input includes a parallel $C = 100\text{ nF}$ capacitor across $R_{\text{fixed}} = 10\text{ k}\Omega$. Under high sensor resistance (low force):
+
+$$f_{c, \text{RC}} = \frac{1}{2\pi R_{\text{fixed}} C} = \frac{1}{2\pi (10 \times 10^3\,\Omega)(100 \times 10^{-9}\text{ F})} = \frac{1}{2\pi \times 10^{-3}} \approx 159.15\text{ Hz}$$
+
+Because the ADS1115 operates at $860\text{ SPS}$ ($f_{\text{Nyquist}} = 430\text{ Hz}$), high-frequency motor noise above $159\text{ Hz}$ is effectively suppressed before digital sampling.
+
+#### 4. Digital Exponential Moving Average (EMA) Low-Pass Filter
+The ESP32 firmware executes real-time discrete low-pass smoothing at loop rate $f_s = 100\text{ Hz}$ ($\Delta t = 10\text{ ms}$):
+
+$$y[k] = \alpha \cdot x[k] + (1 - \alpha) \cdot y[k - 1]$$
+
+Equivalent continuous -3dB cutoff frequency $f_{c, \text{digital}}$:
+
+$$f_{c, \text{digital}} = \frac{\alpha}{2\pi \Delta t (1 - \alpha)}$$
+
+| Channel | Alpha ($\alpha$) | Sampling Rate ($f_s$) | Effective Cutoff ($f_c$) | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| **FSR Tactile** | $0.35$ | $100\text{ Hz}$ | $\approx 8.57\text{ Hz}$ | Rapid contact onset detection without mechanical bounce |
+| **EMG Envelope** | $0.25$ | $100\text{ Hz}$ | $\approx 5.31\text{ Hz}$ | Reconstructs smooth muscular activation envelope |
+| **EEG Rhythms** | $0.20$ | $100\text{ Hz}$ | $\approx 3.98\text{ Hz}$ | Attenuates high-frequency baseline drift and RF pickup |
+
+---
+
+### C. PCA9685 PWM Timing & Microsecond Mapping
+
+#### 1. Prescaler Register Derivation
+The PCA9685 operates with a $25\text{ MHz}$ internal clock. The 8-bit prescaler determines output frequency $f_{\text{pwm}}$:
+
+$$\text{PRESCALE} = \text{round}\left( \frac{f_{\text{osc}}}{4096 \times f_{\text{pwm}}} \right) - 1$$
+
+For $f_{\text{pwm}} = 50\text{ Hz}$ ($T_{\text{period}} = 20\text{ ms} = 20,000\,\mu\text{s}$):
+
+$$\text{PRESCALE} = \text{round}\left( \frac{25 \times 10^6}{4096 \times 50} \right) - 1 = \text{round}(122.07) - 1 = 121 = \text{0x79}$$
+
+#### 2. PWM Resolution & Microsecond-to-Tick Mapping
+Each 12-bit tick period is:
+
+$$\Delta t_{\text{tick}} = \frac{T_{\text{period}}}{4096} = \frac{20000\,\mu\text{s}}{4096} \approx 4.8828\,\mu\text{s/tick}$$
+
+To command target joint angle $\theta \in [\theta_{\min}, \theta_{\max}]$:
+
+$$t_{\mu\text{s}}(\theta) = t_{\min} + \left( \frac{(\theta + \theta_{\text{trim}}) \cdot \text{dir} - \theta_{\min}}{\theta_{\max} - \theta_{\min}} \right) \cdot (t_{\max} - t_{\min})$$
+
+$$\text{Tick}_{\text{off}} = \text{round}\left( \frac{t_{\mu\text{s}}(\theta)}{20000\,\mu\text{s}} \times 4096 \right) = \text{round}\left( t_{\mu\text{s}}(\theta) \times 0.2048 \right)$$
+
+*Example*: Neutral servo position ($1500\,\mu\text{s}$) produces $\text{Tick}_{\text{off}} = \text{round}(1500 \times 0.2048) = 307$.
+
+---
+
+### D. AS5600 12-Bit Magnetic Rotary Encoder Angular Equations
+
+The AS5600 measures diametric magnet orientation via integrated Hall sensors:
+* **Resolution**: 12-bit ($N_{\text{total}} = 2^{12} = 4096$ counts per $360^\circ$).
+* **Angular LSB**:
+  $$\Delta \theta = \frac{360.0^\circ}{4096} \approx 0.08789^\circ/\text{LSB} = 1.534 \times 10^{-3}\text{ rad}$$
+* **Calibrated Angle Transformation**:
+  $$\theta_{\text{raw}} = \left( \frac{N_{\text{raw}}}{4096.0} \right) \times 360.0^\circ$$
+  $$\theta_{\text{calibrated}} = \left[ (\theta_{\text{raw}} \cdot \text{dir}) - \theta_{\text{zero\_offset}} \right] \pmod{360.0^\circ}$$
+
+---
+
+### E. Quintic S-Curve Soft-Start Velocity Profile
+
+To eliminate current spikes from high-torque servos (DS3225), transitions follow a jerk-free quintic profile evaluated at $50\text{ Hz}$ ($\Delta t = 20\text{ ms}$):
+
+$$\tau = \frac{t}{T} \in [0, 1]$$
+
+$$s(\tau) = 10\tau^3 - 15\tau^4 + 6\tau^5$$
+
+Velocity $\dot{s}(\tau)$ and acceleration $\ddot{s}(\tau)$ derivatives:
+
+$$\dot{s}(\tau) = \frac{1}{T} \left( 30\tau^2 - 60\tau^3 + 30\tau^4 \right)$$
+
+$$\ddot{s}(\tau) = \frac{1}{T^2} \left( 60\tau - 180\tau^2 + 120\tau^3 \right)$$
+
+* **Peak Velocity**: Occurs at midpoint $\tau = 0.5$:
+  $$\dot{s}(0.5) = \frac{1}{T} (30 \cdot 0.25 - 60 \cdot 0.125 + 30 \cdot 0.0625) = \frac{1.875}{T}$$
+  $$v_{\max} = \frac{1.875}{T} \cdot |\theta_{\text{target}} - \theta_{\text{start}}| \le v_{\text{rated}}$$
+* **Zero Boundary Conditions**:
+  $$\dot{s}(0) = \dot{s}(1) = 0, \quad \ddot{s}(0) = \ddot{s}(1) = 0$$
+
+guaranteeing zero torque discontinuity and protecting servo gear trains from shock wear.
+
+---
+
+## 6. Complete Repository Folder Structure
 
 ```
 VAPA/
@@ -248,7 +397,7 @@ VAPA/
 
 ---
 
-## 6. Software Dependencies & Installation
+## 7. Software Dependencies & Installation
 
 ### A. NVIDIA Jetson Orin (Python 3)
 Install Python dependencies into virtual environment:

@@ -66,15 +66,20 @@ class DepthGeometricClusterDetector:
         h, w = bgr_image.shape[:2]
 
         if depth_image_m is not None:
-            # 1. Depth-based foreground segmentation
-            # Valid depth range in workspace
-            valid_depth_mask = (depth_image_m > MIN_VALID_DEPTH_M) & (depth_image_m < 1.0)
-            
-            # Find foreground clusters closer than background
-            foreground_mask = valid_depth_mask.astype(np.uint8) * 255
-            # Morphological cleanup
+            # Multi-modal foreground segmentation (color + depth gradient)
+            diff_table = np.linalg.norm(bgr_image.astype(float) - np.array([180, 160, 140]), axis=2)
+            diff_bg = np.linalg.norm(bgr_image.astype(float) - np.array([220, 220, 220]), axis=2)
+            color_mask = ((diff_table > 35) & (diff_bg > 35)).astype(np.uint8) * 255
+
+            sobelx = cv2.Sobel(depth_image_m, cv2.CV_32F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(depth_image_m, cv2.CV_32F, 0, 1, ksize=3)
+            mag = np.sqrt(sobelx**2 + sobely**2)
+            depth_edge_mask = (mag > 0.03).astype(np.uint8) * 255
+
+            valid_depth = (depth_image_m >= MIN_VALID_DEPTH_M) & (depth_image_m <= MAX_VALID_DEPTH_M)
+            foreground_mask = cv2.bitwise_or(color_mask, depth_edge_mask)
+            foreground_mask[~valid_depth] = 0
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            foreground_mask = cv2.morphologyEx(foreground_mask, cv2.MORPH_OPEN, kernel)
             foreground_mask = cv2.morphologyEx(foreground_mask, cv2.MORPH_CLOSE, kernel)
         else:
             # Fallback to color/edge segmentation
