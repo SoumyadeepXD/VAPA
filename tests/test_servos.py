@@ -16,9 +16,7 @@ from actuation.arm_controller import ArmController
 from config.hardware_config import SERVO_CHANNELS
 from drivers.pca9685_actuator import VAPAActuatorController
 
-
 def print_menu():
-<<<<<<< HEAD
     print("\n" + "=" * 65)
     print(" VAPA 9-SERVO HARDWARE CALIBRATION & JOINT CONTROL MENU")
     print("=" * 65)
@@ -27,23 +25,10 @@ def print_menu():
     print(" 3. Test Hand Open / Close (All 5 Fingers CH0 - CH4)")
     print(" 4. Run Automated Motion Sweep (Fingers & Wrist)")
     print(" 5. Move All Servos to Home Pose")
-    print(" 6. Emergency Stop (Kill all PWM)")
-    print(" 7. Quit")
-    print("=" * 65)
-=======
-    print("\n" + "=" * 60)
-    print(" VAPA SERVO CALIBRATION & JOINT CONTROL MENU")
-    print("=" * 60)
-    print(" 1. Display Current Joint Angles")
-    print(" 2. Move Specific Joint (e.g. set J1 to 30 deg)")
-    print(" 3. Test Gripper Open / Close")
-    print(" 4. Run Automated Joint Range Sweep (Calibrate Min/Max)")
-    print(" 5. Move Arm to Home Pose")
     print(" 6. Direct VAPAActuatorController (CH 0-8) Low-Level Test")
     print(" 7. Emergency Stop (Kill all PWM)")
     print(" 8. Quit")
-    print("=" * 60)
->>>>>>> origin/main
+    print("=" * 65)
 
 
 def run_servo_tool():
@@ -54,7 +39,7 @@ def run_servo_tool():
     try:
         while True:
             print_menu()
-            choice = input("Select an option (1-7): ").strip()
+            choice = input("Select an option (1-8): ").strip()
 
             if choice == "1":
                 angles = arm.get_joint_angles()
@@ -124,9 +109,6 @@ def run_servo_tool():
                 print("Arm at home.")
 
             elif choice == "6":
-<<<<<<< HEAD
-                print("Emergency Stop: Killing PWM on all channels!")
-=======
                 print("\nDirect Testing VAPAActuatorController (CH 0-8)...")
                 try:
                     controller = VAPAActuatorController()
@@ -143,8 +125,7 @@ def run_servo_tool():
                     print(f"Direct actuator test note/error: {e}")
 
             elif choice == "7":
-                print("Emergency Stop Triggered!")
->>>>>>> origin/main
+                print("Emergency Stop: Killing PWM on all channels!")
                 arm.emergency_stop()
 
             elif choice == "8" or choice.lower() == "q":
