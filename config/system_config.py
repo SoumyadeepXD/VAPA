@@ -15,7 +15,7 @@ DEPTH_UNITS_TO_METERS = 0.001  # RealSense standard depth unit is millimeters
 
 # Depth clipping bounds (meters)
 MIN_VALID_DEPTH_M = 0.15  # RealSense min range
-MAX_VALID_DEPTH_M = 1.80  # Max workspace range
+MAX_VALID_DEPTH_M = 2.50  # Environmental & wall sensing range (manipulation target workspace <= 1.2m)
 DEPTH_STAT_METHOD = "median"  # 'median', 'mean', or 'trimmed_mean'
 
 # Object Detection Classes & Confidence Threshold

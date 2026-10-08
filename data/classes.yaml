@@ -1,0 +1,147 @@
+# VAPA Target Class Map & Label Association Registry
+# Maps each object class to its Cutkosky grasp profile group,
+# COCO source label / class index, and Open Images V7 MID code.
+
+version: "1.0.0"
+target_classes_count: 14
+
+classes:
+  - id: 0
+    name: "mug"
+    profile_group: "cylindrical_power"
+    coco_label: "cup"
+    coco_id: 41
+    open_images_name: "Mug"
+    open_images_mid: "/m/02jnhm"
+    coco_coverage: "needs fine-tuning"
+    coverage_evidence: "COCO merges ceramic mugs and handles under generic 'cup'; fails to isolate handle geometry required for standoff approach vector."
+
+  - id: 1
+    name: "bottle"
+    profile_group: "cylindrical_power"
+    coco_label: "bottle"
+    coco_id: 39
+    open_images_name: "Bottle"
+    open_images_mid: "/m/04dr76w"
+    coco_coverage: "covered"
+    coverage_evidence: "High recall and AP@0.5 (>0.82) on standard cylindrical water/soda bottles in COCO pretrained weights."
+
+  - id: 2
+    name: "can"
+    profile_group: "cylindrical_power"
+    coco_label: null
+    coco_id: null
+    open_images_name: "Tin can"
+    open_images_mid: "/m/02jvh9"
+    coco_coverage: "needs fine-tuning"
+    coverage_evidence: "Not present in COCO 80 classes. Pretrained models confuse aluminum beverage cans with cups or bottles with <0.35 confidence."
+
+  - id: 3
+    name: "apple"
+    profile_group: "spherical_power"
+    coco_label: "apple"
+    coco_id: 47
+    open_images_name: "Apple"
+    open_images_mid: "/m/014j1m"
+    coco_coverage: "covered"
+    coverage_evidence: "Natively supported in COCO (class 47) with robust AP@0.5 (>0.84) across tabletop scenes."
+
+  - id: 4
+    name: "orange"
+    profile_group: "spherical_power"
+    coco_label: "orange"
+    coco_id: 49
+    open_images_name: "Orange"
+    open_images_mid: "/m/0cyhj_"
+    coco_coverage: "covered"
+    coverage_evidence: "Natively supported in COCO (class 49) with high AP@0.5 (>0.81) for spherical citrus objects."
+
+  - id: 5
+    name: "spoon"
+    profile_group: "pinch_precision"
+    coco_label: "spoon"
+    coco_id: 44
+    open_images_name: "Spoon"
+    open_images_mid: "/m/0cmx8"
+    coco_coverage: "covered"
+    coverage_evidence: "Standard COCO class (class 44). Reliable detection when unobstructed on flat surfaces."
+
+  - id: 6
+    name: "fork"
+    profile_group: "pinch_precision"
+    coco_label: "fork"
+    coco_id: 42
+    open_images_name: "Fork"
+    open_images_mid: "/m/0dt3t"
+    coco_coverage: "covered"
+    coverage_evidence: "Standard COCO class (class 42). High detection accuracy under standard tabletop lighting."
+
+  - id: 7
+    name: "cup"
+    profile_group: "palmar_medium"
+    coco_label: "cup"
+    coco_id: 41
+    open_images_name: "Coffee cup"
+    open_images_mid: "/m/02p5f1q"
+    coco_coverage: "covered"
+    coverage_evidence: "Natively supported in COCO (class 41). High precision across disposable and plastic cups."
+
+  - id: 8
+    name: "banana"
+    profile_group: "palmar_medium"
+    coco_label: "banana"
+    coco_id: 46
+    open_images_name: "Banana"
+    open_images_mid: "/m/09qck"
+    coco_coverage: "covered"
+    coverage_evidence: "Standard COCO class (class 46). Characteristic curved aspect ratio gives AP@0.5 > 0.88."
+
+  - id: 9
+    name: "box"
+    profile_group: "lateral_prismatic"
+    coco_label: null
+    coco_id: null
+    open_images_name: "Box"
+    open_images_mid: "/m/025dyy"
+    coco_coverage: "needs fine-tuning"
+    coverage_evidence: "Not present in COCO 80 classes. Small cardboard packages and medicine containers are undetected by pretrained COCO models."
+
+  - id: 10
+    name: "book"
+    profile_group: "lateral_prismatic"
+    coco_label: "book"
+    coco_id: 73
+    open_images_name: "Book"
+    open_images_mid: "/m/0bt9lr"
+    coco_coverage: "covered"
+    coverage_evidence: "Natively supported in COCO (class 73). Robust bounding box precision across tabletop volumes."
+
+  - id: 11
+    name: "cell phone"
+    profile_group: "lateral_prismatic"
+    coco_label: "cell phone"
+    coco_id: 67
+    open_images_name: "Mobile phone"
+    open_images_mid: "/m/050k8"
+    coco_coverage: "covered"
+    coverage_evidence: "Natively supported in COCO (class 67). Strong performance under typical indoor desktop illumination."
+
+  - id: 12
+    name: "mouse"
+    profile_group: "lateral_prismatic"
+    coco_label: "mouse"
+    coco_id: 64
+    open_images_name: "Computer mouse"
+    open_images_mid: "/m/020lf"
+    coco_coverage: "covered"
+    coverage_evidence: "Natively supported in COCO (class 64). Reliable detection on flat desk surfaces."
+
+  - id: 13
+    name: "remote"
+    profile_group: "lateral_prismatic"
+    coco_label: "remote"
+    coco_id: 65
+    open_images_name: "Remote control"
+    open_images_mid: "/m/0qjjc"
+    coco_coverage: "covered"
+    coverage_evidence: "Natively supported in COCO (class 65). High accuracy on handheld rectangular controllers."

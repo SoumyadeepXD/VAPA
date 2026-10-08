@@ -106,7 +106,10 @@ class EMGDecoder:
         """
         now = time.time()
         if new_samples.ndim == 1:
-            new_samples = new_samples[:, np.newaxis]
+            if len(new_samples) == self.num_channels:
+                new_samples = new_samples[:, np.newaxis]
+            else:
+                new_samples = new_samples[np.newaxis, :]
 
         ch_count, n_pts = new_samples.shape
         channel_rms_list = []

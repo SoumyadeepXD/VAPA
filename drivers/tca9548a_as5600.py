@@ -1,9 +1,11 @@
 """
 VAPA TCA9548A I2C Multiplexer & AS5600 12-bit Magnetic Rotary Encoder Driver
 Enables polling multiple AS5600 magnetic encoders sharing identical I2C address (0x36)
-via the TCA9548A Multiplexer (0x70) on NVIDIA Jetson Orin (/dev/i2c-1).
+via the TCA9548A Multiplexer (0x70) on NVIDIA Jetson Orin (auto-scans candidate I2C buses).
+Matches Hardware Connection Guide Section 9 (Channels 0-3).
 """
 
+import os
 import time
 import math
 import logging
@@ -16,20 +18,20 @@ TCA9548A_DEFAULT_ADDR = 0x70  # A0=GND, A1=GND, A2=GND
 AS5600_I2C_ADDR       = 0x36  # Fixed factory address for AS5600
 
 # AS5600 Register Map
-AS5600_REG_STATUS     = 0x0B  # Magnet status (MD, ML, MH)
-AS5600_REG_RAW_ANGLE_H = 0x0C # Raw Angle 11:8
-AS5600_REG_RAW_ANGLE_L = 0x0D # Raw Angle 7:0
-AS5600_REG_ANGLE_H     = 0x0E # Scaled Angle 11:8 (with hysteresis & zero)
-AS5600_REG_ANGLE_L     = 0x0F # Scaled Angle 7:0
-AS5600_REG_CONF_H      = 0x07 # Configuration register
+AS5600_REG_STATUS      = 0x0B  # Magnet status (MD, ML, MH)
+AS5600_REG_RAW_ANGLE_H = 0x0C  # Raw Angle 11:8
+AS5600_REG_RAW_ANGLE_L = 0x0D  # Raw Angle 7:0
+AS5600_REG_ANGLE_H     = 0x0E  # Scaled Angle 11:8
+AS5600_REG_ANGLE_L     = 0x0F  # Scaled Angle 7:0
+AS5600_REG_CONF_H      = 0x07  # Configuration register
 AS5600_REG_CONF_L      = 0x08
 
-# Channel Mapping for Prosthetic Joints
+# Channel Mapping for Prosthetic Joints (Hardware Connection Guide Section 9A)
 ENCODER_CHANNEL_MAP = {
-    0: {"name": "finger_group_angle", "description": "Finger Group Flexion Encoder", "zero_offset_deg": 0.0, "direction": 1},
-    1: {"name": "wrist_flex_angle",   "description": "Wrist Flexion/Pitch Encoder", "zero_offset_deg": 0.0, "direction": 1},
-    2: {"name": "wrist_rotate_angle", "description": "Wrist Pronation/Supination",  "zero_offset_deg": 0.0, "direction": 1},
-    3: {"name": "forearm_rotate_angle","description": "Forearm Rotation Encoder",   "zero_offset_deg": 0.0, "direction": 1},
+    0: {"name": "finger_group_angle",  "description": "Finger Group Flexion Encoder", "zero_offset_deg": 0.0, "direction": 1},
+    1: {"name": "wrist_flex_angle",    "description": "Wrist Flexion/Pitch Encoder",  "zero_offset_deg": 0.0, "direction": 1},
+    2: {"name": "wrist_rotate_angle",  "description": "Wrist Pronation/Supination",   "zero_offset_deg": 0.0, "direction": 1},
+    3: {"name": "forearm_rotate_angle", "description": "Forearm Rotation Encoder",    "zero_offset_deg": 0.0, "direction": 1},
 }
 
 
@@ -51,19 +53,42 @@ class AS5600EncoderMux:
 
     def _init_i2c(self):
         try:
+            import smbus2 as smbus
+        except ImportError:
             try:
-                import smbus2 as smbus
-            except ImportError:
                 import smbus
-            self.i2c_bus = smbus.SMBus(self.bus_num)
+            except ImportError:
+                logger.warning("Neither smbus2 nor smbus is installed. Mock mode activated.")
+                return
 
-            # Test multiplexer presence by writing/reading control register
-            self.select_mux_channel(0)
-            self.is_connected = True
-            logger.info(f"TCA9548A Multiplexer (0x{self.mux_address:02X}) initialized on /dev/i2c-{self.bus_num}.")
-        except Exception as e:
-            logger.warning(f"Could not connect to TCA9548A on /dev/i2c-{self.bus_num} ({e}). Falling back to simulation mode.")
-            self.is_connected = False
+        candidate_buses = [self.bus_num, 7, 8, 0]
+        try:
+            for dev in os.listdir("/dev"):
+                if dev.startswith("i2c-"):
+                    b_id = int(dev.split("-")[1])
+                    if b_id not in candidate_buses:
+                        candidate_buses.append(b_id)
+        except Exception:
+            pass
+
+        for b in candidate_buses:
+            if not os.path.exists(f"/dev/i2c-{b}"):
+                continue
+            try:
+                bus = smbus.SMBus(b)
+                # Test multiplexer presence by writing to MUX
+                bus.write_byte(self.mux_address, 0x01)
+                self.i2c_bus = bus
+                self.bus_num = b
+                self.is_connected = True
+                logger.info(f"[SUCCESS] TCA9548A Multiplexer (0x{self.mux_address:02X}) initialized on /dev/i2c-{b}.")
+                return
+            except Exception as e:
+                logger.debug(f"I2C bus {b} failed for TCA9548A: {e}")
+                continue
+
+        logger.warning(f"Could not connect to TCA9548A on candidate buses {candidate_buses}. Using software simulation.")
+        self.is_connected = False
 
     def select_mux_channel(self, channel: int):
         """
@@ -86,7 +111,7 @@ class AS5600EncoderMux:
         Switches MUX to given channel and reads 12-bit raw angle (0 - 4095) from AS5600.
         """
         if not self.is_connected or self.i2c_bus is None:
-            # Simulated angle reading with slight drift
+            # Simulated angle reading
             t = time.time()
             sim_counts = int((math.sin(t * 0.5 + channel) * 0.5 + 0.5) * 4095)
             return sim_counts
@@ -97,7 +122,6 @@ class AS5600EncoderMux:
             time.sleep(0.0005)  # 500us settle time
 
             # 2. Read 2 bytes from RAW_ANGLE registers (0x0C and 0x0D)
-            # AS5600 auto-increments or supports block read
             msb = self.i2c_bus.read_byte_data(AS5600_I2C_ADDR, AS5600_REG_RAW_ANGLE_H)
             lsb = self.i2c_bus.read_byte_data(AS5600_I2C_ADDR, AS5600_REG_RAW_ANGLE_L)
 
@@ -115,14 +139,12 @@ class AS5600EncoderMux:
         raw_counts = self.read_raw_angle_12bit(channel)
         self.last_raw_counts[channel] = raw_counts
 
-        # Convert 12-bit counts (0-4095) to raw degrees (360 / 4096 = 0.08789 deg/tick)
         raw_deg = (float(raw_counts) / 4096.0) * 360.0
 
         cfg = ENCODER_CHANNEL_MAP.get(channel, {"zero_offset_deg": 0.0, "direction": 1})
         zero_offset = cfg.get("zero_offset_deg", 0.0)
         direction = cfg.get("direction", 1)
 
-        # Apply calibration
         cal_deg = (raw_deg * direction) - zero_offset
         cal_deg = cal_deg % 360.0
         if cal_deg < 0.0:
@@ -168,7 +190,6 @@ class AS5600EncoderMux:
     def close(self):
         if self.i2c_bus:
             try:
-                # Disable all MUX channels
                 self.i2c_bus.write_byte(self.mux_address, 0x00)
                 self.i2c_bus.close()
             except Exception:

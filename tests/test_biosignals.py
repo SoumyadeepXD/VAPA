@@ -17,7 +17,7 @@ from biosignals.eeg_decoder import EEGDecoder, EEGIntent
 from biosignals.intent_fusion import IntentFusionEngine
 
 
-def run_biosignal_test(force_mock: bool = False):
+def run_biosignal_test(force_mock: bool = False, duration_s: float = None):
     print("=" * 75)
     print(" VAPA TEST: Biosignals Pipeline (EMG Muscle & EEG Brain Wave Decoding)")
     print("=" * 75)
@@ -45,6 +45,9 @@ def run_biosignal_test(force_mock: bool = False):
     try:
         sample_step = 0
         while True:
+            if duration_s is not None and (time.time() - start_time) >= duration_s:
+                print(f"\nReached target duration {duration_s}s. Exiting cleanly.")
+                break
             t0 = time.time()
             emg_chunk, eeg_chunk = streamer.read_chunk(num_samples=10)
 
@@ -91,4 +94,10 @@ def run_biosignal_test(force_mock: bool = False):
 
 if __name__ == "__main__":
     force_mock_flag = "--mock" in sys.argv or "--real" not in sys.argv
-    run_biosignal_test(force_mock=force_mock_flag)
+    dur = None
+    if "--duration" in sys.argv:
+        try:
+            dur = float(sys.argv[sys.argv.index("--duration") + 1])
+        except (IndexError, ValueError):
+            dur = 2.0
+    run_biosignal_test(force_mock=force_mock_flag, duration_s=dur)

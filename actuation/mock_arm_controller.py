@@ -19,6 +19,9 @@ class MockServoDriver(BaseServoDriver):
     """Virtual simulation driver for testing without physical arm hardware."""
     def __init__(self):
         self.target_angles = {k: JOINT_LIMITS_DEG[k][2] for k in JOINT_LIMITS_DEG}
+        for ch_name, cfg in SERVO_CHANNELS.items():
+            if ch_name not in self.target_angles:
+                self.target_angles[ch_name] = cfg.get("home_deg", 0.0)
         self.current_angles = self.target_angles.copy()
         self.current_pulses = {k: 1500.0 for k in SERVO_CHANNELS}
         self.applied_tactile_force_n = 0.0
@@ -37,8 +40,10 @@ class MockServoDriver(BaseServoDriver):
                 break
 
     def set_joint_angle(self, joint_name: str, angle_deg: float):
-        if joint_name in self.current_angles:
-            self.target_angles[joint_name] = float(angle_deg)
+        self.target_angles[joint_name] = float(angle_deg)
+        if joint_name not in self.current_angles:
+            self.current_angles[joint_name] = float(angle_deg)
+        else:
             # Smoothly update current angle toward target
             diff = angle_deg - self.current_angles[joint_name]
             step = np.clip(diff, -15.0, 15.0)

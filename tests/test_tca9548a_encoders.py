@@ -14,7 +14,14 @@ from drivers.tca9548a_as5600 import AS5600EncoderMux, ENCODER_CHANNEL_MAP
 
 
 def main():
-    force_mock = "--mock" in sys.argv
+    force_mock = "--mock" in sys.argv or "--real" not in sys.argv
+    dur = None
+    if "--duration" in sys.argv:
+        try:
+            dur = float(sys.argv[sys.argv.index("--duration") + 1])
+        except (IndexError, ValueError):
+            dur = 2.0
+
     print("=" * 75)
     print(" VAPA DIAGNOSTIC: TCA9548A Multiplexer & AS5600 Magnetic Encoders")
     print("=" * 75)
@@ -29,7 +36,11 @@ def main():
     print("\nReading live encoder streams at 20 Hz (Press Ctrl+C to stop)...\n")
 
     try:
+        start_t = time.time()
         while True:
+            if dur is not None and (time.time() - start_t) >= dur:
+                print(f"\nReached target duration {dur}s. Exiting cleanly.")
+                break
             t0 = time.time()
             readings = mux.read_all_encoders()
 

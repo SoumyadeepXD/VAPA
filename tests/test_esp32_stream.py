@@ -14,6 +14,13 @@ from biosignals.esp32_serial_receiver import AsyncESP32Receiver
 
 def main():
     force_mock = "--mock" in sys.argv
+    dur = None
+    if "--duration" in sys.argv:
+        try:
+            dur = float(sys.argv[sys.argv.index("--duration") + 1])
+        except (IndexError, ValueError):
+            dur = 2.0
+
     port = "/dev/ttyTHS1" if not force_mock else "MOCK"
     baud = 115200
 
@@ -28,8 +35,12 @@ def main():
     print("Listening for incoming 100 Hz JSON frames (Press Ctrl+C to stop)...\n")
 
     try:
+        start_t = time.time()
         last_print = time.time()
         while True:
+            if dur is not None and (time.time() - start_t) >= dur:
+                print(f"\nReached target duration {dur}s. Exiting cleanly.")
+                break
             now = time.time()
             if now - last_print >= 0.1:  # 10 Hz display rate
                 last_print = now
@@ -39,10 +50,10 @@ def main():
                 f = frame.fsr_forces_n
                 sys.stdout.write(
                     f"\r[Seq:{frame.seq:6d}] "
-                    f"FSR(N): [Th:{f[0]:4.1f} In:{f[1]:4.1f} Mi:{f[2]:4.1f} Ri:{f[3]:4.1f}] "
+                    f"FSR(N): [Th:{f[0]:4.1f} In:{f[1]:4.1f} Mi:{f[2]:4.1f} Ri:{f[3]:4.1f} Li:{f[4]:4.1f}] "
                     f"Tot:{frame.total_grip_force_n:4.1f}N | "
-                    f"EMG_Act:{frame.emg_activation:4.2f} (V:{frame.emg_volts:.2f}V) | "
-                    f"EEG_V:{frame.eeg_volts:.2f}V | "
+                    f"EMG_Act:{frame.emg_activation:4.2f} ({frame.emg_volts:.2f}V) | "
+                    f"EEG:{frame.eeg_volts:.2f}V | "
                     f"Rx:{stats['packets_received']} Drop:{stats['packets_dropped']}"
                 )
                 sys.stdout.flush()

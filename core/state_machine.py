@@ -68,6 +68,8 @@ class VAPAStateMachine:
         self._state_start_time = time.time()
         if target is not None:
             self._locked_target = target
+        elif new_state in (VAPAState.IDLE, VAPAState.SCANNING):
+            self._locked_target = None
 
         logger.info(f"STATE TRANSITION: {self._previous_state} -> {self._current_state}" + (f" (Target: {target.label})" if target else ""))
 

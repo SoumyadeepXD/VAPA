@@ -363,13 +363,24 @@ VAPA/
 │   ├── state_machine.py       # Master system lifecycle finite state machine
 │   └── vapa_engine.py         # Multi-threaded orchestrator uniting all threads
 ├── tests/
-│   ├── test_realsense.py      # Camera & 3D deprojection test
-│   ├── test_biosignals.py     # EMG/EEG real-time DSP test
-│   ├── test_kinematics.py     # FK/IK reachability test
-│   ├── test_servos.py         # Interactive CLI servo calibration tool
+│   ├── test_phase0_preflight.py  # Phase 0: System Pre-Flight Diagnostics & Calibration
+│   ├── test_phase1_perception.py # Phase 1: 3D Environmental Perception & Spatial Localization
+│   ├── test_phase2_neural_reach.py # Phase 2: Neural Decoding, Cognitive Selection & Reach Planning
+│   ├── test_phase3_grasp_force.py # Phase 3: EMG Muscle Grasp & Closed-Loop Force Regulation
+│   ├── test_phase4_release_retract.py # Phase 4: Object Holding, Extensor Release & Retraction to Home
+│   ├── test_phase5_e2e_mission.py # Phase 5: Autonomous End-to-End Mission & System Certification
+│   ├── test_phase6_stress_certification.py # Phase 6: Multi-Cycle Durability, Stress & Fleet Flight Certification
+│   ├── test_phase7_hand_pipeline.py # Phase 7: Robotic Hand Kinematics, InMoov URDF & Optical Grasping
+│   ├── test_phase8_flight_qualification.py # Phase 8: Hardware-in-the-Loop Flight Qualification & Telemetry
+│   ├── test_phase9_production_fleet.py # Phase 9: Full Fleet Production Readiness & Clinical Certification
+│   ├── test_unit_suite.py        # Automated unit test suite (18 comprehensive tests)
+│   ├── test_realsense.py         # Camera & 3D deprojection test
+│   ├── test_biosignals.py        # EMG/EEG real-time DSP test
+│   ├── test_kinematics.py        # FK/IK reachability test
+│   ├── test_servos.py            # Interactive CLI servo calibration tool
 │   ├── test_tca9548a_encoders.py # Diagnostic test for TCA9548A + 4x AS5600 encoders
-│   ├── test_esp32_stream.py   # Diagnostic test for ESP32 UART telemetry stream
-│   └── run_system_sim.py      # End-to-end automated demo
+│   ├── test_esp32_stream.py      # Diagnostic test for ESP32 UART telemetry stream
+│   └── run_system_sim.py         # End-to-end automated demo
 ├── vapa_app.py                # Main application with interactive HUD dashboard
 ├── architecture.md            # Complete circuit schematics, power rails & folder structure
 ├── context.md                 # Complete system blueprint & architectural context

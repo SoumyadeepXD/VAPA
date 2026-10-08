@@ -1,0 +1,105 @@
+# VAPA Grasp Profile Configuration (Grip Taxonomy & Physical Force Envelopes)
+# Maps robotic hand finger apertures, joint synergies, and tactile force ceilings
+# across Cutkosky grasp taxonomy classes for prosthetic manipulation.
+
+version: "1.0.0"
+
+profiles:
+  cylindrical_power:
+    name: "Cylindrical Power Grasp"
+    description: "Full five-finger closure enveloping cylindrical bodies with opposed thumb."
+    pre_grasp_aperture_m: 0.080
+    min_aperture_m: 0.025
+    default_force_min_n: 1.5
+    default_force_max_n: 4.5
+    force_emergency_ceiling_n: 8.0
+    finger_synergies:
+      thumb: 0.70
+      index: 0.85
+      middle: 0.90
+      ring: 0.90
+      pinky: 0.90
+    approach_vector_preferred: [1.0, 0.0, 0.0]  # Horizontal frontal/lateral
+    classes:
+      - mug
+      - bottle
+      - can
+
+  spherical_power:
+    name: "Spherical Grasp"
+    description: "Cupped palm closure with radial finger abduction conforming to curved fruit."
+    pre_grasp_aperture_m: 0.085
+    min_aperture_m: 0.030
+    default_force_min_n: 0.6
+    default_force_max_n: 2.0
+    force_emergency_ceiling_n: 4.5
+    finger_synergies:
+      thumb: 0.75
+      index: 0.75
+      middle: 0.80
+      ring: 0.80
+      pinky: 0.80
+    approach_vector_preferred: [0.0, 0.0, -1.0]  # Top-down or angled frontal
+    classes:
+      - apple
+      - orange
+
+  pinch_precision:
+    name: "Two-Finger / Three-Finger Pinch Precision"
+    description: "Fingertip opposition between thumb, index, and middle for small utensils."
+    pre_grasp_aperture_m: 0.040
+    min_aperture_m: 0.005
+    default_force_min_n: 0.5
+    default_force_max_n: 1.8
+    force_emergency_ceiling_n: 3.5
+    finger_synergies:
+      thumb: 0.85
+      index: 0.85
+      middle: 0.40
+      ring: 0.00
+      pinky: 0.00
+    approach_vector_preferred: [0.707, 0.0, -0.707]  # 45-degree top-down
+    classes:
+      - spoon
+      - fork
+
+  palmar_medium:
+    name: "Palmar Medium Grasp"
+    description: "Moderate wrap for tapered drinkware and organic curved shapes."
+    pre_grasp_aperture_m: 0.075
+    min_aperture_m: 0.020
+    default_force_min_n: 0.8
+    default_force_max_n: 2.5
+    force_emergency_ceiling_n: 5.5
+    finger_synergies:
+      thumb: 0.65
+      index: 0.75
+      middle: 0.80
+      ring: 0.75
+      pinky: 0.70
+    approach_vector_preferred: [1.0, 0.0, 0.0]
+    classes:
+      - cup
+      - banana
+
+  lateral_prismatic:
+    name: "Lateral Prismatic Clamp"
+    description: "Parallel wide flat contact for rectangular containers, media, and electronics."
+    pre_grasp_aperture_m: 0.090
+    min_aperture_m: 0.015
+    default_force_min_n: 1.2
+    default_force_max_n: 5.5
+    force_emergency_ceiling_n: 9.0
+    finger_synergies:
+      thumb: 0.80
+      index: 0.90
+      middle: 0.90
+      ring: 0.85
+      pinky: 0.80
+    approach_vector_preferred: [0.0, 0.0, -1.0]
+    classes:
+      - box
+      - book
+      - cell phone
+      - mouse
+      - remote

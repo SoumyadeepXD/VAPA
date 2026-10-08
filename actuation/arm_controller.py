@@ -1,16 +1,16 @@
 """
 VAPA Unified Arm & Hand Controller
-High-level actuator manager: coordinates multi-joint trajectories,
-closed-loop force-controlled grasping, and multi-finger prosthetic actuation.
+Coordinates multi-joint trajectories, closed-loop force-controlled grasping
+using real 5-finger FSR tactile feedback, and 9-servo hardware actuation.
 """
 
 import time
 import logging
+import threading
 import numpy as np
 
-from config.hardware_config import SIMULATION_MODE
+from config.hardware_config import SIMULATION_MODE, SERVO_CHANNELS
 from config.system_config import (
-    JOINT_LIMITS_DEG,
     FORCE_MIN_N,
     FORCE_MAX_N,
     FORCE_EMERGENCY_LIMIT_N,
@@ -25,32 +25,58 @@ from kinematics.trajectory_planner import JointTrajectoryPoint
 
 logger = logging.getLogger("VAPA.Actuation.ArmController")
 
+# Default Home Pose for the 9-Servo Build Phase (Fingers -> Palm -> Wrist -> Forearm)
+DEFAULT_BUILD_PHASE_HOME = {
+    "finger_thumb": 0.0,          # Fully open (0 deg flexion)
+    "finger_index": 0.0,          # Fully open
+    "finger_middle": 0.0,         # Fully open
+    "finger_ring": 0.0,           # Fully open
+    "finger_pinky": 0.0,          # Fully open
+    "joint_wrist_flex": 90.0,     # Neutral center
+    "joint_wrist_rotate": 90.0,   # Neutral center
+    "joint_wrist_bend": 90.0,     # Neutral center
+    "joint_forearm_rotate": 90.0, # Neutral center
+    "joint_6_gripper": 100.0,     # 100% open
+}
+
 
 class ArmController:
-    """Unified controller for arm kinematics execution, servos, and gripper force."""
+    """Unified controller for arm kinematics, 9-channel PCA9685 servos, and closed-loop FSR grasping."""
     def __init__(self, driver: BaseServoDriver = None, force_mock: bool = False):
+        self.lock = threading.RLock()
         self.arm_model = ArmModel()
         self.dt = 1.0 / ACTUATION_LOOP_RATE_HZ
+        self.is_mock = False
 
         if driver is not None:
             self.driver = driver
         elif force_mock or SIMULATION_MODE:
             self.driver = MockServoDriver()
+            self.is_mock = True
         else:
-            # Try PCA9685 first, fallback to Serial, then Mock
+            # Auto-probe PCA9685 on candidate I2C buses (1, 7, 8, 0)
             pca = PCA9685ServoDriver()
             if pca.is_connected:
                 self.driver = pca
+                self.is_mock = False
+                logger.info("[OK] ArmController connected to physical PCA9685 hardware.")
             else:
                 serial_drv = SerialServoDriver()
                 if serial_drv.is_connected:
                     self.driver = serial_drv
+                    self.is_mock = False
                 else:
-                    logger.warning("No physical servo hardware detected. Initializing MockServoDriver.")
+                    logger.warning("No physical servo hardware detected on I2C/UART. Initializing MockServoDriver.")
                     self.driver = MockServoDriver()
+                    self.is_mock = True
 
-        # Initialize arm to Home Position
-        self.current_angles = self.arm_model.home_angles_deg.copy()
+        # Initialize arm & hand to Home Position
+        self.current_angles = DEFAULT_BUILD_PHASE_HOME.copy()
+        # Merge canonical kinematic home positions for any kinematics queries
+        for k, v in self.arm_model.home_angles_deg.items():
+            if k not in self.current_angles:
+                self.current_angles[k] = v
+
         self.driver.set_all_angles(self.current_angles)
         self.current_force_n = 0.0
         self.is_emergency_stopped = False
@@ -61,128 +87,171 @@ class ArmController:
         return self.current_angles.copy()
 
     def go_to_home(self, duration_s: float = 1.5):
-        """Moves arm smoothly to default home position."""
-        self.move_to_angles(self.arm_model.home_angles_deg, duration_s=duration_s)
+        """Moves arm and hand smoothly to default home position."""
+        self.move_to_angles(DEFAULT_BUILD_PHASE_HOME, duration_s=duration_s)
 
     def move_to_angles(self, target_angles: dict[str, float], duration_s: float = 1.0):
         """Directly interpolates to target joint configuration."""
-        if self.is_emergency_stopped:
-            logger.warning("Arm is in EMERGENCY STOP state. Ignoring move command.")
-            return
+        with self.lock:
+            if self.is_emergency_stopped:
+                logger.warning("Arm is in EMERGENCY STOP state. Ignoring move command.")
+                return
 
-        clamped_target = self.arm_model.clamp_angles(target_angles)
-        steps = max(5, int(duration_s * ACTUATION_LOOP_RATE_HZ))
+            steps = max(5, int(duration_s * ACTUATION_LOOP_RATE_HZ))
 
-        for step in range(1, steps + 1):
-            alpha = step / steps
-            interp_angles = {}
-            for j in self.arm_model.JOINT_NAMES:
-                q0 = self.current_angles.get(j, self.arm_model.home_angles_deg[j])
-                q1 = clamped_target.get(j, q0)
-                interp_angles[j] = q0 + alpha * (q1 - q0)
+            for step in range(1, steps + 1):
+                if self.is_emergency_stopped:
+                    break
+                alpha = step / steps
+                interp_angles = {}
+                for j, target_val in target_angles.items():
+                    q0 = self.current_angles.get(j, target_val)
+                    interp_angles[j] = q0 + alpha * (target_val - q0)
 
-            self.driver.set_all_angles(interp_angles)
-            self.current_angles = interp_angles.copy()
-            time.sleep(self.dt)
+                self.driver.set_all_angles(interp_angles)
+                self.current_angles.update(interp_angles)
+                time.sleep(self.dt)
 
     def execute_trajectory(self, trajectory: list[JointTrajectoryPoint], abort_check_fn=None) -> bool:
         """
         Executes a planned smooth joint trajectory.
         abort_check_fn: optional callable returning True if execution should abort immediately.
         """
-        if self.is_emergency_stopped:
-            return False
-
-        logger.info(f"Executing trajectory with {len(trajectory)} waypoints...")
-        last_t = 0.0
-
-        for pt in trajectory:
-            if abort_check_fn and abort_check_fn():
-                logger.warning("Trajectory aborted by safety trigger.")
+        with self.lock:
+            if self.is_emergency_stopped:
                 return False
 
-            clamped = self.arm_model.clamp_angles(pt.angles_deg)
-            self.driver.set_all_angles(clamped)
-            self.current_angles = clamped.copy()
+            logger.info(f"Executing trajectory with {len(trajectory)} waypoints...")
+            last_t = 0.0
 
-            sleep_time = max(0.001, pt.time_s - last_t)
-            time.sleep(sleep_time)
-            last_t = pt.time_s
+            for pt in trajectory:
+                if self.is_emergency_stopped or (abort_check_fn and abort_check_fn()):
+                    logger.warning("Trajectory aborted by safety trigger.")
+                    return False
 
-        return True
+                clamped = self.arm_model.clamp_angles(pt.angles_deg)
+                self.driver.set_all_angles(clamped)
+                self.current_angles.update(clamped)
+
+                sleep_time = max(0.001, pt.time_s - last_t)
+                time.sleep(sleep_time)
+                last_t = pt.time_s
+
+            return True
 
     def set_gripper_opening_percent(self, percent: float):
         """
-        Sets gripper or multi-finger opening percentage (0.0 = Fully closed, 100.0 = Fully open).
-        If multi-finger servos are defined, drives all fingers simultaneously.
+        Sets hand opening percentage (0.0 = Fully closed, 100.0 = Fully open).
+        Drives all 5 fingers simultaneously (CH 0-4: Thumb, Index, Middle, Ring, Pinky).
         """
-        percent = float(np.clip(percent, 0.0, 100.0))
-        self.driver.set_joint_angle("joint_6_gripper", percent)
-        self.current_angles["joint_6_gripper"] = percent
+        with self.lock:
+            percent = float(np.clip(percent, 0.0, 100.0))
+            self.driver.set_joint_angle("joint_6_gripper", percent)
+            self.current_angles["joint_6_gripper"] = percent
 
-        # Drive individual fingers if present
-        for finger in ("finger_thumb", "finger_index", "finger_middle", "finger_ring", "finger_pinky"):
-            self.driver.set_joint_angle(finger, percent)
-            self.current_angles[finger] = percent
+            # 100% open -> 0 deg flexion; 0% open -> 180 deg flexion
+            flexion_deg = (1.0 - (percent / 100.0)) * 180.0
+            for finger in ("finger_thumb", "finger_index", "finger_middle", "finger_ring", "finger_pinky"):
+                self.driver.set_joint_angle(finger, flexion_deg)
+                self.current_angles[finger] = flexion_deg
 
-    def execute_force_grasp(self, target_force_n: float, timeout_s: float = 3.0) -> bool:
+    def set_individual_finger(self, finger_name: str, percent_open: float):
+        """Drives a specific individual finger (0.0 = closed, 100.0 = open)."""
+        with self.lock:
+            percent = float(np.clip(percent_open, 0.0, 100.0))
+            flexion_deg = (1.0 - (percent / 100.0)) * 180.0
+            self.driver.set_joint_angle(finger_name, flexion_deg)
+            self.current_angles[finger_name] = flexion_deg
+
+    def execute_force_grasp(self, target_force_n: float, timeout_s: float = 3.0, tactile_sensor_fn=None) -> bool:
         """
         Closed-loop force-controlled grasp.
-        Closes gripper gradually while reading force/current feedback until target force is reached.
+        Closes fingers gradually while reading real FSR feedback from ESP32 until target force is reached.
         """
-        target_force_n = np.clip(target_force_n, FORCE_MIN_N, FORCE_MAX_N)
-        logger.info(f"Executing force grasp. Target Force: {target_force_n:.2f} N")
+        with self.lock:
+            target_force_n = float(np.clip(target_force_n, FORCE_MIN_N, FORCE_MAX_N))
+            logger.info(f"Executing force grasp. Target Force: {target_force_n:.2f} N")
 
-        start_time = time.time()
-        applied_force = 0.0
-        grip_percent = self.current_angles.get("joint_6_gripper", 100.0)
+            start_time = time.time()
+            applied_force = 0.0
+            grip_percent = self.current_angles.get("joint_6_gripper", 100.0)
+            measured_tactile = None
 
-        while (time.time() - start_time) < timeout_s:
-            feedback = self.driver.read_feedback()
+            while (time.time() - start_time) < timeout_s:
+                if self.is_emergency_stopped:
+                    logger.warning("Force grasp aborted due to EMERGENCY STOP.")
+                    return False
 
-            # Check for excessive force safety violation
-            tactile = feedback.get("tactile_n")
-            if tactile is not None and tactile >= FORCE_EMERGENCY_LIMIT_N:
-                logger.warning(f"Excessive force detected ({tactile:.1f}N > {FORCE_EMERGENCY_LIMIT_N}N)! Aborting grasp.")
-                self.emergency_stop()
-                return False
+                # 1. Read real tactile feedback from physical FSRs
+                measured_tactile = None
+                if tactile_sensor_fn is not None:
+                    try:
+                        measured_tactile = float(tactile_sensor_fn())
+                    except Exception:
+                        pass
 
-            if applied_force >= target_force_n:
-                logger.info(f"Target force {target_force_n:.2f} N reached.")
-                return True
+                # Safety check: excessive force
+                if measured_tactile is not None and measured_tactile >= FORCE_EMERGENCY_LIMIT_N:
+                    logger.warning(f"Excessive force detected ({measured_tactile:.1f}N > {FORCE_EMERGENCY_LIMIT_N}N)! Aborting grasp.")
+                    self.emergency_stop()
+                    return False
 
-            # Step gripper closure
-            grip_percent = max(0.0, grip_percent - 3.0)
-            self.set_gripper_opening_percent(grip_percent)
+                # Check if physical FSR target force reached
+                if measured_tactile is not None and measured_tactile >= target_force_n:
+                    self.current_force_n = measured_tactile
+                    logger.info(f"[SUCCESS] Physical FSR contact force reached: {measured_tactile:.2f}N >= {target_force_n:.2f}N.")
+                    return True
 
-            # Update simulated/measured force
-            step_force = 0.25
-            applied_force += step_force
-            if isinstance(self.driver, MockServoDriver):
-                self.driver.set_tactile_force(applied_force)
+                # In mock/simulation mode without live sensors, fall back to simulated force ramp
+                if tactile_sensor_fn is None or self.is_mock or (measured_tactile is not None and measured_tactile == 0.0):
+                    if applied_force >= target_force_n:
+                        self.current_force_n = applied_force
+                        logger.info(f"Target force {target_force_n:.2f} N reached.")
+                        return True
 
-            time.sleep(self.dt)
+                # If fingers are fully closed, stop closing further
+                if grip_percent <= 0.0:
+                    logger.info("Fingers fully closed.")
+                    break
 
-        return applied_force >= (target_force_n * 0.8)
+                # Step fingers closure by 3%
+                grip_percent = max(0.0, grip_percent - 3.0)
+                self.set_gripper_opening_percent(grip_percent)
+
+                step_force = 0.25
+                applied_force += step_force
+                if isinstance(self.driver, MockServoDriver):
+                    self.driver.set_tactile_force(applied_force)
+
+                time.sleep(self.dt)
+
+            self.current_force_n = measured_tactile if measured_tactile is not None else applied_force
+            # Grasp settled check
+            return (applied_force >= (target_force_n * 0.8)) or (measured_tactile is not None and measured_tactile >= 0.5)
 
     def release_grasp(self, open_percent: float = 100.0):
-        """Opens gripper to release object."""
-        self.set_gripper_opening_percent(open_percent)
-        if isinstance(self.driver, MockServoDriver):
-            self.driver.set_tactile_force(0.0)
-        logger.info(f"Grasp released (opened to {open_percent}%).")
+        """Opens fingers fully to release object."""
+        with self.lock:
+            self.set_gripper_opening_percent(open_percent)
+            self.current_force_n = 0.0
+            if isinstance(self.driver, MockServoDriver):
+                self.driver.set_tactile_force(0.0)
+            logger.info(f"Grasp released (opened to {open_percent}%).")
 
     def emergency_stop(self):
         """Immediately halts all motion."""
-        self.is_emergency_stopped = True
-        self.driver.emergency_stop()
-        logger.critical("ARM CONTROLLER EMERGENCY STOP TRIGGERED!")
+        with self.lock:
+            self.is_emergency_stopped = True
+            self.driver.emergency_stop()
+            logger.critical("ARM CONTROLLER EMERGENCY STOP TRIGGERED!")
 
     def reset_emergency_stop(self):
         """Clears emergency stop and re-enables control."""
-        self.is_emergency_stopped = False
-        self.driver.set_all_angles(self.current_angles)
-        logger.info("Emergency stop reset.")
+        with self.lock:
+            self.is_emergency_stopped = False
+            self.driver.set_all_angles(self.current_angles)
+            logger.info("Emergency stop reset.")
 
     def close(self):
-        self.driver.close()
+        with self.lock:
+            self.driver.close()

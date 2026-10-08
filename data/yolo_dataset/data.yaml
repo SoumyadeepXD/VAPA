@@ -1,0 +1,19 @@
+path: /Users/soumyadeepxd/Developer/VAPA/data/yolo_dataset
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: mug
+  1: bottle
+  2: can
+  3: apple
+  4: orange
+  5: spoon
+  6: fork
+  7: cup
+  8: banana
+  9: box
+  10: book
+  11: cell phone
+  12: mouse
+  13: remote

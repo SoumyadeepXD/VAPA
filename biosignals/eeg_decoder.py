@@ -106,7 +106,10 @@ class EEGDecoder:
         """
         now = time.time()
         if new_samples.ndim == 1:
-            new_samples = new_samples[:, np.newaxis]
+            if len(new_samples) == self.num_channels:
+                new_samples = new_samples[:, np.newaxis]
+            else:
+                new_samples = new_samples[np.newaxis, :]
 
         ch_count, _ = new_samples.shape
         for ch in range(min(self.num_channels, ch_count)):
@@ -121,7 +124,8 @@ class EEGDecoder:
         beta_power = compute_bandpower(c3_filtered, self.fs, EEG_BETA_RHYTHM_BAND)
 
         # Analyze Frontal channel (Fz) for attention & artifact triggers
-        fz_signal = np.array(self.buffers[min(3, ch_count - 1)])
+        fz_idx = min(3, self.num_channels - 1)
+        fz_signal = np.array(self.buffers[fz_idx])
         fz_filtered = self.filter.filter_signal(fz_signal, "notch")
         fz_filtered = self.filter.filter_signal(fz_filtered, "bandpass")
         

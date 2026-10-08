@@ -2,8 +2,10 @@
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import config
+try:
+    from robotic_hand_pipeline import config
+except ImportError:
+    import config
 
 FORCE_RANGE_BY_CLASS = {
     "mug": (1.0, 3.0),

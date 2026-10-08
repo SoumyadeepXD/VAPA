@@ -122,6 +122,30 @@ class Spatial3DAnalyzer:
         else:
             return float(np.mean(valid))
 
+    def get_ring_median_depth(self, depth_image_m: np.ndarray, bbox: tuple, ring_margin: int = None) -> float:
+        """
+        Computes the robust median depth in an outer annulus / ring surrounding the bounding box.
+        Essential fallback for transparent glass, shiny metals, and dark absorption holes.
+        """
+        x0, y0, x1, y1 = bbox
+        h, w = depth_image_m.shape[:2]
+        bw, bh = max(1, x1 - x0), max(1, y1 - y0)
+        margin = ring_margin if ring_margin is not None else max(10, int(min(bw, bh) * 0.25))
+
+        ry0, ry1 = max(0, y0 - margin), min(h, y1 + margin)
+        rx0, rx1 = max(0, x0 - margin), min(w, x1 + margin)
+
+        if ry1 <= ry0 or rx1 <= rx0:
+            return None
+
+        ring_patch = depth_image_m[ry0:ry1, rx0:rx1].copy()
+        # Zero out the interior object bounding box so only the outer perimeter is sampled
+        iy0, iy1 = max(0, y0 - ry0), min(ring_patch.shape[0], y1 - ry0)
+        ix0, ix1 = max(0, x0 - rx0), min(ring_patch.shape[1], x1 - rx0)
+        ring_patch[iy0:iy1, ix0:ix1] = 0.0
+
+        return self._get_robust_depth(ring_patch)
+
     def estimate_grasp_target(
         self, detection: Detection, color_image: np.ndarray, depth_image_m: np.ndarray, camera
     ) -> GraspTarget3D:
@@ -144,21 +168,37 @@ class Spatial3DAnalyzer:
 
         depth_val = self._get_robust_depth(inner_depth_region)
         if depth_val is None:
-            # Fallback to full bbox
+            # Fallback 1: full bbox
             depth_val = self._get_robust_depth(depth_image_m[y0:y1, x0:x1])
             if depth_val is None:
-                return None
+                # Fallback 2: Ring-median (annulus around bbox to sample supporting tabletop/background)
+                depth_val = self.get_ring_median_depth(depth_image_m, (x0, y0, x1, y1))
+                if depth_val is None:
+                    return None
+
+        # 3D Deprojection helper supporting camera object or intrinsics dict
+        def _deproject(u_p, v_p, z_p):
+            if hasattr(camera, "deproject_pixel"):
+                return camera.deproject_pixel(u_p, v_p, z_p)
+            elif isinstance(camera, dict):
+                fx = camera.get("fx", 615.0)
+                fy = camera.get("fy", 615.0)
+                cx = camera.get("cx", 320.0)
+                cy = camera.get("cy", 240.0)
+                return np.array([(u_p - cx) * z_p / fx, (v_p - cy) * z_p / fy, z_p], dtype=np.float32)
+            else:
+                return np.array([(u_p - 320.0) * z_p / 615.0, (v_p - 240.0) * z_p / 615.0, z_p], dtype=np.float32)
 
         # 3D Deprojection of Center & Key boundary points
         u_center = (x0 + x1) / 2.0
         v_center = (y0 + y1) / 2.0
-        center_camera = camera.deproject_pixel(u_center, v_center, depth_val)
+        center_camera = _deproject(u_center, v_center, depth_val)
 
         # Deproject left/right/top/bottom to measure physical metric size
-        left_3d = camera.deproject_pixel(x0, v_center, depth_val)
-        right_3d = camera.deproject_pixel(x1, v_center, depth_val)
-        top_3d = camera.deproject_pixel(u_center, y0, depth_val)
-        bottom_3d = camera.deproject_pixel(u_center, y1, depth_val)
+        left_3d = _deproject(x0, v_center, depth_val)
+        right_3d = _deproject(x1, v_center, depth_val)
+        top_3d = _deproject(u_center, y0, depth_val)
+        bottom_3d = _deproject(u_center, y1, depth_val)
 
         width_m = float(np.linalg.norm(right_3d - left_3d))
         height_m = float(np.linalg.norm(bottom_3d - top_3d))
@@ -227,3 +267,14 @@ class Spatial3DAnalyzer:
         # Sort reachable targets first, then by detection confidence score
         targets.sort(key=lambda t: (t.is_reachable, t.score), reverse=True)
         return targets
+
+    def analyze_scene(
+        self, detections: list[Detection], color_image: np.ndarray, depth_image_m: np.ndarray, camera_or_intrinsics=None
+    ) -> list[GraspTarget3D]:
+        """Alias for process_scene supporting camera object or intrinsics dict."""
+        return self.process_scene(detections, color_image, depth_image_m, camera_or_intrinsics)
+
+
+# Global alias for Phase V validation consistency
+Spatial3D = Spatial3DAnalyzer
+

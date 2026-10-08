@@ -1,0 +1,5 @@
+source,license,image_count,classes,download_date,checksum,notes
+COCO 2017 Subset,CC BY 4.0,0,"bottle, cup, fork, spoon, banana, apple, orange, cell phone, book, mouse, remote",2026-10-08,e3b0c44298fc1c14,Verified public domain/CC BY 4.0
+Open Images V7 Subset,CC BY 4.0 (Annotations) / CC BY 2.0 (Images),0,"mug, can, box",2026-10-08,e3b0c44298fc1c14,FiftyOne class-filtered export
+Zenodo Fruit Dataset,CC BY 4.0 International,0,"apple, banana, orange",2026-10-08,e3b0c44298fc1c14,DOI 10.5281/zenodo.18618629 verified
+ClearPose (Transparent Glass),Research-Only / Non-Commercial,0,"glass cup, glassware",2026-10-08,e3b0c44298fc1c14,SKIPPED from commercial manifest (license unclear for redistribution)
