@@ -59,6 +59,7 @@ class ESP32TelemetryFrame:
         enc_deg: list[float] = None,
         esp_timestamp_ms: int = 0,
         is_valid: bool = True,
+    ):
         self.seq = int(seq)
         # 5 FSRs: [Thumb, Index, Middle, Ring, Pinky]
         self.fsr_volts = fsr_volts if (fsr_volts and len(fsr_volts) == 5) else [0.0, 0.0, 0.0, 0.0, 0.0]
@@ -77,32 +78,24 @@ class ESP32TelemetryFrame:
     def total_grip_force_n(self) -> float:
         return sum(self.fsr_forces_n)
 
-<<<<<<< HEAD
     def get_finger_force_map(self) -> dict[str, float]:
-        names = ["thumb", "index", "middle", "ring", "little"]
-        return {names[i]: self.fsr_forces_n[i] for i in range(5)}
-=======
+        names = ["thumb", "index", "middle", "ring", "pinky"]
+        return {names[i]: self.fsr_forces_n[i] for i in range(min(5, len(self.fsr_forces_n)))}
+
     @property
     def encoder_angle_deg(self) -> float:
         """Returns primary AS5600 magnetic encoder angle in degrees."""
         return self.enc_deg[0] if self.enc_deg else 0.0
->>>>>>> origin/main
 
     def __repr__(self):
         f = self.fsr_forces_n
         enc_val = self.enc_deg[0] if self.enc_deg else 0.0
-        # Format for up to 5 FSR channels
         fsr_str = f"Th:{f[0]:.1f}, In:{f[1]:.1f}, Mi:{f[2]:.1f}, Ri:{f[3]:.1f}"
         if len(f) > 4:
             fsr_str += f", Pi:{f[4]:.1f}"
         return (
-<<<<<<< HEAD
-            f"ESP32Frame(seq={self.seq}, FSR_N=[Th:{f[0]:.1f}, In:{f[1]:.1f}, Mi:{f[2]:.1f}, Ri:{f[3]:.1f}, Li:{f[4]:.1f}], "
-            f"EMG={self.emg_volts:.2f}V ({self.emg_activation*100:.0f}%), EEG={self.eeg_volts:.2f}V)"
-=======
             f"ESP32Frame(seq={self.seq}, FSR_N=[{fsr_str}], "
-            f"EMG_Act={self.emg_activation:.2f}, EEG_V={self.eeg_volts:.2f}, Enc={enc_val:.1f}°)"
->>>>>>> origin/main
+            f"EMG_Act={self.emg_activation*100:.0f}%, EEG_V={self.eeg_volts:.2f}V, Enc={enc_val:.1f}°)"
         )
 
 
@@ -264,22 +257,13 @@ class AsyncESP32Receiver:
         self.packet_count += 1
         seq = self.packet_count
 
-<<<<<<< HEAD
+        # Simulated baseline for 5x FSRs (Thumb, Index, Middle, Ring, Pinky)
         sim_fsr = [
             max(0.0, float(0.05 + 0.03 * np.sin(t * 2.0))),
             max(0.0, float(0.04 + 0.03 * np.sin(t * 2.0 + 0.5))),
             max(0.0, float(0.03 + 0.02 * np.sin(t * 2.0 + 1.0))),
             max(0.0, float(0.02 + 0.02 * np.sin(t * 2.0 + 1.5))),
             max(0.0, float(0.01 + 0.01 * np.sin(t * 2.0 + 2.0))),
-=======
-        # Simulated baseline for 5x FSRs (Thumb, Index, Middle, Ring, Pinky)
-        sim_fsr = [
-            max(0.0, float(0.05 + 0.02 * np.sin(t * 2.0))),
-            max(0.0, float(0.04 + 0.02 * np.sin(t * 2.0 + 0.5))),
-            max(0.0, float(0.03 + 0.01 * np.sin(t * 2.0 + 1.0))),
-            max(0.0, float(0.02 + 0.01 * np.sin(t * 2.0 + 1.5))),
-            max(0.0, float(0.02 + 0.01 * np.sin(t * 2.0 + 2.0))),
->>>>>>> origin/main
         ]
         sim_emg = float(0.20 + 0.05 * np.sin(t * 0.8))
         sim_eeg = float(0.35 + 0.10 * np.sin(t * 10.0 * 2 * np.pi))
