@@ -44,6 +44,7 @@ class ESP32TelemetryFrame:
         "emg_volts",
         "emg_activation",
         "eeg_volts",
+        "enc_deg",
         "esp_timestamp_ms",
         "arrival_time",
         "is_valid",
@@ -55,11 +56,11 @@ class ESP32TelemetryFrame:
         fsr_volts: list[float] = None,
         emg_volts: float = 0.0,
         eeg_volts: float = 0.0,
+        enc_deg: list[float] = None,
         esp_timestamp_ms: int = 0,
         is_valid: bool = True,
-    ):
         self.seq = int(seq)
-        # 5 FSRs: [Thumb, Index, Middle, Ring, Little]
+        # 5 FSRs: [Thumb, Index, Middle, Ring, Pinky]
         self.fsr_volts = fsr_volts if (fsr_volts and len(fsr_volts) == 5) else [0.0, 0.0, 0.0, 0.0, 0.0]
         # Calculate contact force in Newtons
         self.fsr_forces_n = [float(max(0.0, v * FSR_VOLTAGE_TO_FORCE_FACTOR)) for v in self.fsr_volts]
@@ -67,6 +68,7 @@ class ESP32TelemetryFrame:
         # Normalize EMG voltage (0.15V baseline to 2.5V full flex -> 0.0 to 1.0 activation)
         self.emg_activation = float(np.clip((self.emg_volts - 0.15) / 2.2, 0.0, 1.0))
         self.eeg_volts = float(eeg_volts)
+        self.enc_deg = enc_deg or [0.0]
         self.esp_timestamp_ms = int(esp_timestamp_ms)
         self.arrival_time = time.time()
         self.is_valid = is_valid
@@ -75,15 +77,32 @@ class ESP32TelemetryFrame:
     def total_grip_force_n(self) -> float:
         return sum(self.fsr_forces_n)
 
+<<<<<<< HEAD
     def get_finger_force_map(self) -> dict[str, float]:
         names = ["thumb", "index", "middle", "ring", "little"]
         return {names[i]: self.fsr_forces_n[i] for i in range(5)}
+=======
+    @property
+    def encoder_angle_deg(self) -> float:
+        """Returns primary AS5600 magnetic encoder angle in degrees."""
+        return self.enc_deg[0] if self.enc_deg else 0.0
+>>>>>>> origin/main
 
     def __repr__(self):
         f = self.fsr_forces_n
+        enc_val = self.enc_deg[0] if self.enc_deg else 0.0
+        # Format for up to 5 FSR channels
+        fsr_str = f"Th:{f[0]:.1f}, In:{f[1]:.1f}, Mi:{f[2]:.1f}, Ri:{f[3]:.1f}"
+        if len(f) > 4:
+            fsr_str += f", Pi:{f[4]:.1f}"
         return (
+<<<<<<< HEAD
             f"ESP32Frame(seq={self.seq}, FSR_N=[Th:{f[0]:.1f}, In:{f[1]:.1f}, Mi:{f[2]:.1f}, Ri:{f[3]:.1f}, Li:{f[4]:.1f}], "
             f"EMG={self.emg_volts:.2f}V ({self.emg_activation*100:.0f}%), EEG={self.eeg_volts:.2f}V)"
+=======
+            f"ESP32Frame(seq={self.seq}, FSR_N=[{fsr_str}], "
+            f"EMG_Act={self.emg_activation:.2f}, EEG_V={self.eeg_volts:.2f}, Enc={enc_val:.1f}°)"
+>>>>>>> origin/main
         )
 
 
@@ -204,6 +223,7 @@ class AsyncESP32Receiver:
                 fsr = data.get("fsr", [0.0, 0.0, 0.0, 0.0, 0.0])
                 emg = data.get("emg", 0.0)
                 eeg = data.get("eeg", 0.0)
+                enc = data.get("enc", [0.0])
                 ts  = data.get("ts", 0)
 
                 # Ensure fsr has 5 values
@@ -224,6 +244,7 @@ class AsyncESP32Receiver:
                     fsr_volts=fsr,
                     emg_volts=emg,
                     eeg_volts=eeg,
+                    enc_deg=enc,
                     esp_timestamp_ms=ts,
                     is_valid=True,
                 )
@@ -243,21 +264,33 @@ class AsyncESP32Receiver:
         self.packet_count += 1
         seq = self.packet_count
 
+<<<<<<< HEAD
         sim_fsr = [
             max(0.0, float(0.05 + 0.03 * np.sin(t * 2.0))),
             max(0.0, float(0.04 + 0.03 * np.sin(t * 2.0 + 0.5))),
             max(0.0, float(0.03 + 0.02 * np.sin(t * 2.0 + 1.0))),
             max(0.0, float(0.02 + 0.02 * np.sin(t * 2.0 + 1.5))),
             max(0.0, float(0.01 + 0.01 * np.sin(t * 2.0 + 2.0))),
+=======
+        # Simulated baseline for 5x FSRs (Thumb, Index, Middle, Ring, Pinky)
+        sim_fsr = [
+            max(0.0, float(0.05 + 0.02 * np.sin(t * 2.0))),
+            max(0.0, float(0.04 + 0.02 * np.sin(t * 2.0 + 0.5))),
+            max(0.0, float(0.03 + 0.01 * np.sin(t * 2.0 + 1.0))),
+            max(0.0, float(0.02 + 0.01 * np.sin(t * 2.0 + 1.5))),
+            max(0.0, float(0.02 + 0.01 * np.sin(t * 2.0 + 2.0))),
+>>>>>>> origin/main
         ]
         sim_emg = float(0.20 + 0.05 * np.sin(t * 0.8))
         sim_eeg = float(0.35 + 0.10 * np.sin(t * 10.0 * 2 * np.pi))
+        sim_enc = [float((t * 20.0) % 360.0)]
 
         frame = ESP32TelemetryFrame(
             seq=seq,
             fsr_volts=sim_fsr,
             emg_volts=sim_emg,
             eeg_volts=sim_eeg,
+            enc_deg=sim_enc,
             esp_timestamp_ms=int(t * 1000) % 1000000,
             is_valid=True,
         )

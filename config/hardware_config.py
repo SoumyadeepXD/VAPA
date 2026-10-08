@@ -51,6 +51,7 @@ ENCODER_MUX_CHANNELS = {
 }
 
 # ==============================================================================
+<<<<<<< HEAD
 # 3. 9-SERVO CHANNEL MAP & CALIBRATION TABLE (PCA9685 @ 0x40)
 # ==============================================================================
 # Matches Section 7B & Section 8 of the VAPA Hardware Connection Guide:
@@ -60,6 +61,21 @@ ENCODER_MUX_CHANNELS = {
 # CH 9..15: Unconnected / Reserved for future elbow & shoulder phases
 SERVO_CHANNELS = {
     # --- 5x FINGER SERVOS (MG996R) ---
+    "finger_thumb": {
+        "channel": 0, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "finger_index": {
+=======
+# 3. SERVO CHANNEL MAP & CALIBRATION TABLE (PCA9685 @ 0x40)
+# ==============================================================================
+# Direct mapping from drivers/pca9685_actuator.py:
+# - Fingers (CH 0-4): 5x MG996R Servos
+# - Heavy Arm Joints (CH 5-7): 3x DS3225 25kg Servos
+# - Wrist Pitch (CH 8): 1x DS3218 20kg Servo
+SERVO_CHANNELS = {
+    # Fingers: 5x MG996R Servos (CH 0 to CH 4)
     "finger_thumb": {
         "channel": 0, "type": "MG996R", "min_us": 500, "max_us": 2500,
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
@@ -85,6 +101,89 @@ SERVO_CHANNELS = {
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
+    # Heavy Joint Arm: 3x DS3225 Servos (CH 5 to CH 7)
+    "arm_base_yaw": {
+        "channel": 5, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "arm_shoulder_pitch": {
+        "channel": 6, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "arm_elbow_pitch": {
+        "channel": 7, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 45.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    # Wrist Pitch: 1x DS3218 Servo (CH 8)
+    "wrist_pitch": {
+        "channel": 8, "type": "DS3218", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+
+    # --- Kinematic Model Compatibility Aliases ---
+    "joint_1_base_yaw": {
+        "channel": 5, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "joint_2_shoulder_pitch": {
+        "channel": 6, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "joint_3_elbow_pitch": {
+        "channel": 7, "type": "DS3225", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 45.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "joint_4_wrist_pitch": {
+        "channel": 8, "type": "DS3218", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "finger_thumb_flex": {
+        "channel": 0, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+    "finger_index_flex": {
+>>>>>>> origin/main
+        "channel": 1, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+<<<<<<< HEAD
+    "finger_middle": {
+=======
+    "finger_middle_flex": {
+>>>>>>> origin/main
+        "channel": 2, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+<<<<<<< HEAD
+    "finger_ring": {
+=======
+    "finger_ring_flex": {
+>>>>>>> origin/main
+        "channel": 3, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+<<<<<<< HEAD
+    "finger_pinky": {
+=======
+    "finger_pinky_flex": {
+>>>>>>> origin/main
+        "channel": 4, "type": "MG996R", "min_us": 500, "max_us": 2500,
+        "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 0.0,
+        "center_offset_deg": 0.0, "direction": 1,
+    },
+<<<<<<< HEAD
 
     # --- 3x WRIST SERVOS (DS3225 25kg High-Torque) ---
     "joint_wrist_flex": {
@@ -109,6 +208,8 @@ SERVO_CHANNELS = {
         "min_angle_deg": 0.0, "max_angle_deg": 180.0, "home_deg": 90.0,
         "center_offset_deg": 0.0, "direction": 1,
     },
+=======
+>>>>>>> origin/main
 }
 
 # Compatibility aliases mapping kinematic joint names to physical channels
@@ -149,6 +250,7 @@ NUM_EMG_CHANNELS = 1   # Single MyoWare 2.0 on ADS1115 A0
 NUM_EEG_CHANNELS = 1   # Single EEG analog OUT on ADS1115 A1
 NUM_FSR_CHANNELS = 5   # 5x FSR402 sensors on ESP32 GPIO 32-36
 
+<<<<<<< HEAD
 # ESP32 Channel Mapping (JSON telemetry from ESP32 Node 2)
 FSR_CHANNELS = {
     0: "fsr_thumb",   # GPIO 32
@@ -161,4 +263,28 @@ FSR_CHANNELS = {
 BIO_CHANNELS = {
     0: "emg_myoware",   # ADS1115 A0
     1: "eeg_brainwave", # ADS1115 A1
+=======
+# 5x FSR Sensors on ESP32 Analog Pins (GPIO 32, 33, 34, 35, 36)
+FSR_CHANNELS = {
+    0: "fsr_thumb",
+    1: "fsr_index",
+    2: "fsr_middle",
+    3: "fsr_ring",
+    4: "fsr_pinky",
+}
+
+FSR_ESP32_PINS = {
+    0: 32,  # Thumb (GPIO 32)
+    1: 33,  # Index (GPIO 33)
+    2: 34,  # Middle (GPIO 34)
+    3: 35,  # Ring (GPIO 35)
+    4: 36,  # Pinky (GPIO 36)
+}
+
+# Single ADS1115 (0x48): Bio-Signals (A0 = MyoWare EMG, A1 = EEG Output)
+ADS1115_BIO_ADDR = 0x48
+BIO_CHANNELS = {
+    0: "emg_myoware",   # ADS1115 A0: MyoWare EMG
+    1: "eeg_brainwave", # ADS1115 A1: EEG Output
+>>>>>>> origin/main
 }

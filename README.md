@@ -331,11 +331,14 @@ VAPA/
 │   └── hardware_config.py     # Jetson pinouts, 12-servo map, I2C addresses, UART specs
 ├── firmware/
 │   └── esp32_sensor_node/
-│       ├── esp32_sensor_node.ino  # ESP32 C++ firmware (Dual ADS1115 + 100Hz JSON Serial2)
-│       └── platformio.ini         # PlatformIO build configuration & library dependencies
+│       ├── src/
+│       │   └── main.cpp       # ESP32 C++ firmware (Single ADS1115 + 5x FSRs + AS5600)
+│       ├── esp32_sensor_node.ino # Arduino sketch (Single ADS1115 + 5x FSRs + AS5600)
+│       └── platformio.ini     # PlatformIO build configuration & library dependencies
 ├── drivers/
-│   ├── tca9548a_as5600.py     # TCA9548A I2C Multiplexer & 4x AS5600 Magnetic Encoder driver
-│   └── pca9685_12ch_driver.py # 12-Channel Servo Driver with soft-start S-curve interpolation
+│   ├── pca9685_actuator.py    # VAPAActuatorController (5x MG996R Fingers + 3x DS3225 Arm + 1x DS3218 Wrist)
+│   ├── pca9685_12ch_driver.py # 12-Channel Servo Driver with soft-start S-curve interpolation
+│   └── tca9548a_as5600.py     # TCA9548A I2C Multiplexer & 4x AS5600 Magnetic Encoder driver
 ├── vision/
 │   ├── realsense_camera.py    # RealSense RGB-D capture + Synthetic fallback
 │   ├── object_detector.py     # MediaPipe / YOLO / 3D Depth Segmenter
