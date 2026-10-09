@@ -52,7 +52,7 @@
 | **CH 9–15**| *Reserved* | — | — | — | Future Expansion |
 
 ### 2.4 TCA9548A I2C Multiplexer & 4x AS5600 Encoders
-* **Address**: `0x70` on Jetson I2C bus 1 (`/dev/i2c-1`).
+* **Address**: `0x71` on Jetson I2C bus 1 (`/dev/i2c-1`) (A0=VDD to eliminate PCA9685 0x70 ALLCALL collision).
 * **Encoder Address**: `0x36` on each multiplexed sub-channel.
   * MUX CH 0: Finger Group Angle (12-bit, 0–4095 ticks, 0.088°/LSB).
   * MUX CH 1: Wrist Flexion Angle.

@@ -94,9 +94,10 @@ class PCA9685ServoDriver(BaseServoDriver):
                 new_mode = (old_mode & 0x7F) | 0x10  # Sleep mode to configure prescaler
                 bus.write_byte_data(self.address, PCA9685_MODE1, new_mode)
                 bus.write_byte_data(self.address, PCA9685_PRESCALE, prescale_val)
-                bus.write_byte_data(self.address, PCA9685_MODE1, old_mode)
                 time.sleep(0.005)
-                bus.write_byte_data(self.address, PCA9685_MODE1, old_mode | 0xA1)
+                # Clear ALLCALL bit (bit 0 = 0) to prevent broadcast collision at 0x70
+                # Enable Auto-Increment (bit 5) and RESTART (bit 7)
+                bus.write_byte_data(self.address, PCA9685_MODE1, (old_mode & ~0x11) | 0xA0)
 
                 self.i2c_bus = bus
                 self.bus_num = bus_id

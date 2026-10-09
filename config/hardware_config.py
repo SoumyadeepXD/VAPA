@@ -38,8 +38,8 @@ PCA9685_I2C_BUS = JETSON_I2C_BUS
 PCA9685_I2C_ADDRESS = 0x40
 PCA9685_PWM_FREQ_HZ = 50  # 50 Hz (20ms cycle)
 
-# Device 2: TCA9548A 8-Channel I2C Multiplexer (Section 9A: Address 0x70)
-TCA9548A_I2C_ADDRESS = 0x70
+# Device 2: TCA9548A 8-Channel I2C Multiplexer (Address 0x71; A0=VDD to avoid 0x70 ALLCALL collision)
+TCA9548A_I2C_ADDRESS = 0x71
 
 # Sub-Devices: 4x AS5600 12-bit Magnetic Rotary Encoders (Fixed Address 0x36)
 AS5600_I2C_ADDRESS = 0x36

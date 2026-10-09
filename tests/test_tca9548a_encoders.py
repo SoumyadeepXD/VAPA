@@ -1,6 +1,6 @@
 """
 VAPA Hardware Diagnostic: TCA9548A I2C Multiplexer & 4x AS5600 Encoders
-Polls all 4 magnetic rotary encoders on /dev/i2c-1 (Address 0x70 -> 0x36)
+Polls all 4 magnetic rotary encoders on /dev/i2c-1 (Address 0x71 -> 0x36)
 and displays raw counts, calibrated angles, and magnet field status.
 """
 

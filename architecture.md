@@ -73,7 +73,7 @@
  |         │         ├── CH 7 : Arm Elbow Pitch (DS3225 25kg)                                            |
  |         │         └── CH 8 : Wrist Pitch (DS3218 20kg)                                                |
  |         │                                                                                             |
- |         └─► [ TCA9548A 8-Channel I2C Multiplexer @ 0x70 ] (Optional Aux Sensor MUX)                   |
+ |         └─► [ TCA9548A 8-Channel I2C Multiplexer @ 0x71 ] (Optional Aux Sensor MUX)                   |
  |                                                                                                       |
  |  [ Hardware UART (/dev/ttyTHS1) ] ◄════════════════════════════════════════════════════════════════╗  |
  +----------------------------------------------------------------------------------------------------║--+

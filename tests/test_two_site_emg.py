@@ -695,9 +695,35 @@ class TestHardwareEstopAndTelemetry(unittest.TestCase):
         self.assertEqual(intent_4.gesture, EMGIntent.CO_CONTRACTION_ESTOP)
         self.assertEqual(decoder_debounced.co_contraction_counter, 4)
 
+    def test_i2c_scan_fails_if_two_devices_answer_at_0x70(self):
+        """Item 6: I2C scan test MUST fail if two devices answer at 0x70."""
+        from drivers.tca9548a_as5600 import check_i2c_bus_collisions
+        from config.hardware_config import TCA9548A_I2C_ADDRESS
+
+        # 1. Verify configured address is 0x71
+        self.assertEqual(TCA9548A_I2C_ADDRESS, 0x71)
+
+        # 2. Simulated collision condition: both PCA9685 (ALLCALL) and TCA9548A respond at 0x70
+        colliding_devices = {
+            "PCA9685_ALLCALL": [0x40, 0x70],
+            "TCA9548A_OLD": [0x70],
+        }
+        with self.assertRaises(RuntimeError) as ctx:
+            check_i2c_bus_collisions(candidate_devices=colliding_devices)
+        self.assertIn("I2C COLLISION ERROR", str(ctx.exception))
+        self.assertIn("0x70", str(ctx.exception))
+
+        # 3. Clean condition: PCA9685 ALLCALL cleared (only 0x40), TCA9548A safely at 0x71
+        safe_devices = {
+            "PCA9685": [0x40],
+            "TCA9548A": [0x71],
+        }
+        self.assertTrue(check_i2c_bus_collisions(candidate_devices=safe_devices))
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

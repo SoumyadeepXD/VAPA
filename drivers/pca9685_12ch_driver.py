@@ -102,9 +102,10 @@ class PCA9685_12ChDriver:
                 new_mode = (old_mode & 0x7F) | 0x10  # Sleep to set prescale
                 bus.write_byte_data(self.address, PCA9685_MODE1, new_mode)
                 bus.write_byte_data(self.address, PCA9685_PRESCALE, prescale)
-                bus.write_byte_data(self.address, PCA9685_MODE1, old_mode)
                 time.sleep(0.005)
-                bus.write_byte_data(self.address, PCA9685_MODE1, old_mode | 0xA1)
+                # Clear ALLCALL bit (bit 0 = 0) so PCA9685 never responds to 0x70 broadcast
+                # Enable Auto-Increment (bit 5) and RESTART (bit 7)
+                bus.write_byte_data(self.address, PCA9685_MODE1, (old_mode & ~0x11) | 0xA0)
 
                 self.i2c_bus = bus
                 self.bus_num = b
