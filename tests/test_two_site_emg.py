@@ -470,7 +470,142 @@ class TestHardwareEstopAndTelemetry(unittest.TestCase):
         finally:
             os.remove(calib_file)
 
+    def test_fsr_calibration_arming_refusal_and_acceptance(self):
+        """ArmController MUST refuse to arm without valid FSR calibration."""
+        import tempfile
+        # 1. Valid servo calib
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "timestamp": time.time(),
+                "tool_version": "1.0.0",
+                "servos": {"joint_wrist_flex": {"min_deg": 15.0, "max_deg": 165.0, "home_deg": 90.0}}
+            }, f)
+            servo_calib_file = f.name
+
+        # 2. Uncalibrated FSR (like .example)
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": False,
+                "timestamp": None,
+                "tool_version": None,
+                "sensors": {"finger_thumb": {"channel": 0}}
+            }, f)
+            bad_fsr_file = f.name
+
+        # 3. Valid FSR calib
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "timestamp": time.time(),
+                "tool_version": "1.0.0",
+                "force_ceiling_fraction": 0.85,
+                "sensors": {
+                    "finger_thumb": {
+                        "channel": 0,
+                        "tare_volts": 0.05,
+                        "loaded_volts": 2.80,
+                        "dynamic_range_volts": 2.75,
+                        "ceiling_fraction": 0.85,
+                        "ceiling_volts": 2.3875,
+                    }
+                }
+            }, f)
+            valid_fsr_file = f.name
+
+        try:
+            mock_driver = MockServoDriver()
+
+            # Missing FSR calibration file -> Refuse arming
+            ctrl_missing = ArmController(
+                driver=mock_driver,
+                force_mock=True,
+                calibration_path=servo_calib_file,
+                fsr_calibration_path="/non/existent/fsr_cal.json",
+            )
+            self.assertFalse(ctrl_missing.is_armed)
+
+            # Uncalibrated FSR -> Refuse arming
+            ctrl_uncal = ArmController(
+                driver=mock_driver,
+                force_mock=True,
+                calibration_path=servo_calib_file,
+                fsr_calibration_path=bad_fsr_file,
+            )
+            self.assertFalse(ctrl_uncal.is_armed)
+
+            # Valid FSR -> ARMED
+            ctrl_valid = ArmController(
+                driver=mock_driver,
+                force_mock=True,
+                calibration_path=servo_calib_file,
+                fsr_calibration_path=valid_fsr_file,
+            )
+            self.assertTrue(ctrl_valid.is_armed)
+            self.assertEqual(ctrl_valid.fsr_force_ceiling_fraction, 0.85)
+        finally:
+            os.remove(servo_calib_file)
+            os.remove(bad_fsr_file)
+            os.remove(valid_fsr_file)
+
+    def test_fsr_fraction_force_ceiling_abort(self):
+        """execute_force_grasp must emergency stop if finger exceeds fraction ceiling (0.85)."""
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "timestamp": time.time(),
+                "tool_version": "1.0.0",
+                "servos": {"joint_wrist_flex": {"min_deg": 15.0, "max_deg": 165.0, "home_deg": 90.0}}
+            }, f)
+            servo_calib_file = f.name
+
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "timestamp": time.time(),
+                "tool_version": "1.0.0",
+                "force_ceiling_fraction": 0.85,
+                "sensors": {
+                    "finger_thumb": {
+                        "channel": 0,
+                        "tare_volts": 0.0,
+                        "loaded_volts": 3.0,
+                        "dynamic_range_volts": 3.0,
+                        "ceiling_fraction": 0.85,
+                        "ceiling_volts": 2.55,
+                    }
+                }
+            }, f)
+            valid_fsr_file = f.name
+
+        try:
+            mock_driver = MockServoDriver()
+            # Simulated telemetry where thumb voltage is 2.80V (2.80/3.00 = 93.3% > 85% ceiling)
+            excessive_frame = ESP32TelemetryFrame(
+                fsr_volts=[2.80, 0.1, 0.1, 0.1, 0.1],
+                oe_ok=True,
+            )
+
+            ctrl = ArmController(
+                driver=mock_driver,
+                force_mock=True,
+                calibration_path=servo_calib_file,
+                fsr_calibration_path=valid_fsr_file,
+                telemetry_provider=lambda: excessive_frame,
+            )
+            self.assertTrue(ctrl.is_armed)
+
+            # Attempt force grasp: should trip ceiling and abort
+            result = ctrl.execute_force_grasp(target_force_n=2.0, timeout_s=0.5)
+            self.assertFalse(result)
+            self.assertTrue(ctrl.is_emergency_stopped)
+        finally:
+            os.remove(servo_calib_file)
+            os.remove(valid_fsr_file)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -55,6 +55,7 @@ class ArmController:
         driver: BaseServoDriver = None,
         force_mock: bool = False,
         calibration_path: str = "config/servo_calibration.json",
+        fsr_calibration_path: str = "config/fsr_calibration.json",
         bench_no_failsafe: bool = False,
         telemetry_provider: Optional[Callable[[], Any]] = None,
     ):
@@ -63,27 +64,35 @@ class ArmController:
         self.dt = 1.0 / ACTUATION_LOOP_RATE_HZ
         self.is_mock = False
         self.calibration_path = calibration_path
+        self.fsr_calibration_path = fsr_calibration_path
         self.bench_no_failsafe = bool(bench_no_failsafe)
         self.telemetry_provider = telemetry_provider
         self.servo_calibrated_limits = {}
+        self.fsr_calibrated_limits = {}
+        self.fsr_force_ceiling_fraction = 0.85
         self.last_bench_warning_time = 0.0
         self.is_armed = False
 
         # 1. Arming Gate A: Validate Servo Calibration File
         calib_ok = self._load_servo_calibration(calibration_path)
 
-        # 2. Arming Gate B: Validate ESP32 PCA9685 /OE Supervision
+        # 2. Arming Gate B: Validate FSR Tactile Calibration File
+        fsr_calib_ok = self._load_fsr_calibration(fsr_calibration_path)
+
+        # 3. Arming Gate C: Validate ESP32 PCA9685 /OE Supervision
         oe_ok = self._check_oe_safety()
 
         if self.bench_no_failsafe:
             if not oe_ok:
                 logger.warning("[BENCH OVERRIDE] OE failsafe check failed, but arming permitted due to --bench-no-failsafe.")
+            if not fsr_calib_ok:
+                logger.warning("[BENCH OVERRIDE] FSR calibration missing/invalid, but arming permitted due to --bench-no-failsafe.")
             self.is_armed = calib_ok
             self._start_bench_warning_loop()
         else:
-            self.is_armed = calib_ok and oe_ok
+            self.is_armed = calib_ok and fsr_calib_ok and oe_ok
 
-        # 3. Driver Discovery
+        # 4. Driver Discovery
         if driver is not None:
             self.driver = driver
         elif force_mock or SIMULATION_MODE:
@@ -210,6 +219,53 @@ class ArmController:
             return True
         except Exception as e:
             logger.critical(f"Error parsing servo calibration file '{path}': {e}. Refusing to arm.")
+            return False
+
+    def _load_fsr_calibration(self, path: str) -> bool:
+        """Loads and validates per-finger calibrated FSR dynamic ranges and fraction-based force ceilings. Fails closed."""
+        if not path or not os.path.exists(path):
+            logger.critical(f"FSR calibration file '{path}' NOT found! ArmController refusing to arm. Run tools/calibrate_fsr.py.")
+            return False
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+
+            if data.get("calibrated") is not True:
+                logger.critical(
+                    f"FSR calibration file '{path}' is NOT calibrated ('calibrated': false or missing)! "
+                    f"Arming refused. Run tools/calibrate_fsr.py on physical hardware to calibrate."
+                )
+                return False
+            if not data.get("timestamp"):
+                logger.critical(f"FSR calibration file '{path}' is missing timestamp! Arming refused.")
+                return False
+            if not data.get("tool_version"):
+                logger.critical(f"FSR calibration file '{path}' is missing tool_version! Arming refused.")
+                return False
+
+            sensors = data.get("sensors", {})
+            if not sensors:
+                logger.critical(f"FSR calibration file '{path}' has no sensors configured! Refusing to arm.")
+                return False
+
+            self.fsr_force_ceiling_fraction = float(data.get("force_ceiling_fraction", 0.85))
+            for name, cfg in sensors.items():
+                tare_v = float(cfg.get("tare_volts", 0.05))
+                load_v = float(cfg.get("loaded_volts", 2.80))
+                dyn_range = float(cfg.get("dynamic_range_volts", max(0.1, load_v - tare_v)))
+                ceil_frac = float(cfg.get("ceiling_fraction", self.fsr_force_ceiling_fraction))
+                self.fsr_calibrated_limits[name] = {
+                    "channel": int(cfg.get("channel", 0)),
+                    "tare_volts": tare_v,
+                    "loaded_volts": load_v,
+                    "dynamic_range_volts": dyn_range,
+                    "ceiling_fraction": ceil_frac,
+                    "ceiling_volts": tare_v + ceil_frac * dyn_range,
+                }
+            logger.info(f"[ARMED] Calibrated FSR parameters loaded ({len(self.fsr_calibrated_limits)} sensors, ceiling={self.fsr_force_ceiling_fraction*100:.1f}%).")
+            return True
+        except Exception as e:
+            logger.critical(f"Error parsing FSR calibration file '{path}': {e}. Refusing to arm.")
             return False
 
     def clamp_joint_angle(self, joint_name: str, angle: float) -> float:
@@ -369,11 +425,34 @@ class ArmController:
                     except Exception:
                         pass
 
-                # Safety check: excessive force
-                if measured_tactile is not None and measured_tactile >= FORCE_EMERGENCY_LIMIT_N:
-                    logger.warning(f"Excessive force detected ({measured_tactile:.1f}N > {FORCE_EMERGENCY_LIMIT_N}N)! Aborting grasp.")
-                    self.emergency_stop()
-                    return False
+                # Check live telemetry FSR readings against per-finger calibrated dynamic range fraction
+                if self.telemetry_provider is not None:
+                    try:
+                        telem = self.telemetry_provider()
+                        if telem is not None and hasattr(telem, "fsr_volts") and telem.fsr_volts:
+                            for f_name, f_cfg in self.fsr_calibrated_limits.items():
+                                ch = f_cfg["channel"]
+                                if ch < len(telem.fsr_volts):
+                                    v = telem.fsr_volts[ch]
+                                    frac = (v - f_cfg["tare_volts"]) / max(0.05, f_cfg["dynamic_range_volts"])
+                                    if frac >= f_cfg["ceiling_fraction"]:
+                                        logger.warning(
+                                            f"Excessive FSR force on {f_name} ({frac*100:.1f}% >= {f_cfg['ceiling_fraction']*100:.1f}% dynamic range)! Aborting grasp."
+                                        )
+                                        self.emergency_stop()
+                                        return False
+                    except Exception:
+                        pass
+
+                # Safety check: excessive force fraction or emergency limit
+                if measured_tactile is not None:
+                    if (
+                        measured_tactile >= FORCE_EMERGENCY_LIMIT_N
+                        or (0.0 < measured_tactile <= 1.0 and measured_tactile >= self.fsr_force_ceiling_fraction)
+                    ):
+                        logger.warning(f"Excessive force detected ({measured_tactile:.2f})! Aborting grasp.")
+                        self.emergency_stop()
+                        return False
 
                 # Check if physical FSR target force reached
                 if measured_tactile is not None and measured_tactile >= target_force_n:

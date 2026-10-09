@@ -42,7 +42,12 @@ VAPA - Multi-Sensor Node (Dual ADS1115 + 5x FSRs + AS5600 Encoders + Safety OE)
 
 #define TARGET_SAMPLE_PERIOD_US 10000   // 100 Hz loop timing (10 ms)
 #define JETSON_HEARTBEAT_TIMEOUT_MS 200 // Heartbeat lost if > 200ms without Jetson ping
-#define FSR_FORCE_CEILING_VOLTS 3.42f   // 12.0 N ceiling (with 3.5 N/V calibration)
+#define FSR_FORCE_CEILING_FRACTION 0.85f // Fraction of calibrated FSR dynamic range (default 85%)
+
+// Calibrated per-finger baselines & dynamic ranges from tools/calibrate_fsr.py
+const float fsr_tare_volts[5]  = {0.05f, 0.05f, 0.05f, 0.05f, 0.05f};
+const float fsr_range_volts[5] = {2.75f, 2.75f, 2.75f, 2.75f, 2.75f};
+
 
 // I2C Addresses & Configurable Channel-to-ADS Mappings
 #define ADS1115_PRIMARY_ADDR    0x48    // ADS1115 #1
@@ -242,7 +247,8 @@ void loop() {
     for (int i = 0; i < 5; i++) {
       float v_fsr = ((float)raw_fsr[i] / 4095.0f) * 3.3f;
       filtered_fsr[i] = apply_ema(v_fsr, filtered_fsr[i], EMA_ALPHA_FSR);
-      if (filtered_fsr[i] >= FSR_FORCE_CEILING_VOLTS) {
+      float fraction = (filtered_fsr[i] - fsr_tare_volts[i]) / fsr_range_volts[i];
+      if (fraction >= FSR_FORCE_CEILING_FRACTION) {
         force_ceiling_tripped = true;
       }
     }
