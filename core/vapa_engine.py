@@ -191,6 +191,8 @@ class VAPAEngine:
             # Read biosignal chunk from ESP32 UART
             emg_chunk, eeg_chunk = self.streamer.read_chunk(num_samples=10)
             fsr_forces = self.streamer.get_fsr_forces()
+            telemetry = self.streamer.get_latest_telemetry()
+            hw_estop = getattr(telemetry, "estop_button_pressed", False)
 
             emg_intent = self.emg_decoder.update_samples(emg_chunk)
             eeg_intent = self.eeg_decoder.update_samples(eeg_chunk)
@@ -199,10 +201,10 @@ class VAPAEngine:
                 targets_copy = list(self.visible_targets)
                 cur_state = self.state_machine.current_state
 
-            cmd = self.fusion.fuse(emg_intent, eeg_intent, targets_copy, cur_state)
+            cmd = self.fusion.fuse(emg_intent, eeg_intent, targets_copy, cur_state, estop_hardware_trigger=hw_estop)
 
-            # High-priority instant emergency stop directly from biosignals thread
-            if cmd.action == MultimodalCommand.EMERGENCY_STOP:
+            # High-priority instant emergency stop directly from biosignals thread or hardware button
+            if cmd.action == MultimodalCommand.EMERGENCY_STOP or hw_estop:
                 self.state_machine.transition_to(VAPAState.EMERGENCY_STOP)
                 self.arm.emergency_stop()
 

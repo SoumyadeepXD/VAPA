@@ -1,0 +1,79 @@
+{
+  "version": "1.0",
+  "calibration_date": "2026-10-09",
+  "description": "VAPA 9-Servo Calibrated Per-Joint Bounds and Safe Rest Pose",
+  "servos": {
+    "finger_thumb": {
+      "channel": 0,
+      "type": "MG996R",
+      "min_deg": 0.0,
+      "max_deg": 180.0,
+      "home_deg": 0.0,
+      "direction": 1
+    },
+    "finger_index": {
+      "channel": 1,
+      "type": "MG996R",
+      "min_deg": 0.0,
+      "max_deg": 180.0,
+      "home_deg": 0.0,
+      "direction": 1
+    },
+    "finger_middle": {
+      "channel": 2,
+      "type": "MG996R",
+      "min_deg": 0.0,
+      "max_deg": 180.0,
+      "home_deg": 0.0,
+      "direction": 1
+    },
+    "finger_ring": {
+      "channel": 3,
+      "type": "MG996R",
+      "min_deg": 0.0,
+      "max_deg": 180.0,
+      "home_deg": 0.0,
+      "direction": 1
+    },
+    "finger_pinky": {
+      "channel": 4,
+      "type": "MG996R",
+      "min_deg": 0.0,
+      "max_deg": 180.0,
+      "home_deg": 0.0,
+      "direction": 1
+    },
+    "joint_wrist_flex": {
+      "channel": 5,
+      "type": "DS3225",
+      "min_deg": 15.0,
+      "max_deg": 165.0,
+      "home_deg": 90.0,
+      "direction": 1
+    },
+    "joint_wrist_rotate": {
+      "channel": 6,
+      "type": "DS3225",
+      "min_deg": 10.0,
+      "max_deg": 170.0,
+      "home_deg": 90.0,
+      "direction": 1
+    },
+    "joint_wrist_bend": {
+      "channel": 7,
+      "type": "DS3225",
+      "min_deg": 20.0,
+      "max_deg": 160.0,
+      "home_deg": 90.0,
+      "direction": 1
+    },
+    "joint_forearm_rotate": {
+      "channel": 8,
+      "type": "DS3218",
+      "min_deg": 10.0,
+      "max_deg": 170.0,
+      "home_deg": 90.0,
+      "direction": 1
+    }
+  }
+}

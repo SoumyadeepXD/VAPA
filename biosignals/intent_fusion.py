@@ -64,6 +64,7 @@ class IntentFusionEngine:
         eeg_intent: EEGIntent,
         visible_targets: list[GraspTarget3D],
         system_state: str,
+        estop_hardware_trigger: bool = False,
     ) -> MultimodalCommand:
         """
         Fuses biosignals and vision into a unified action command.
@@ -71,7 +72,15 @@ class IntentFusionEngine:
         self.current_state = system_state
         num_targets = len(visible_targets)
 
-        # 1. HIGHEST PRIORITY: Emergency Stop Trigger (EMG Co-contraction)
+        # 1. HIGHEST PRIORITY: Emergency Stop Trigger (Hardware E-Stop Button or EMG Co-contraction)
+        if estop_hardware_trigger:
+            logger.critical("ESP32 Hardware E-Stop button pressed! Triggering EMERGENCY_STOP.")
+            return MultimodalCommand(
+                action=MultimodalCommand.EMERGENCY_STOP,
+                confidence=1.0,
+                source="ESP32_BUTTON_ESTOP",
+            )
+
         if emg_intent.gesture == EMGIntent.CO_CONTRACTION_ESTOP:
             logger.warning("EMG Co-contraction detected! Triggering EMERGENCY_STOP.")
             return MultimodalCommand(

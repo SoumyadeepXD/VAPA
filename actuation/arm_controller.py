@@ -2,14 +2,21 @@
 VAPA Unified Arm & Hand Controller
 Coordinates multi-joint trajectories, closed-loop force-controlled grasping
 using real 5-finger FSR tactile feedback, and 9-servo hardware actuation.
+
+Hardware Safety Gate:
+- Checks config/servo_calibration.json upon initialization.
+- If missing or unreadable -> REFUSES TO ARM (fails closed).
+- Clamps all commanded angles to calibrated per-servo [min_deg, max_deg] bounds.
 """
 
+import os
+import json
 import time
 import logging
 import threading
 import numpy as np
 
-from config.hardware_config import SIMULATION_MODE, SERVO_CHANNELS
+from config.hardware_config import SIMULATION_MODE, SERVO_CHANNELS, SERVO_ALIASES
 from config.system_config import (
     FORCE_MIN_N,
     FORCE_MAX_N,
@@ -42,12 +49,24 @@ DEFAULT_BUILD_PHASE_HOME = {
 
 class ArmController:
     """Unified controller for arm kinematics, 9-channel PCA9685 servos, and closed-loop FSR grasping."""
-    def __init__(self, driver: BaseServoDriver = None, force_mock: bool = False):
+    def __init__(
+        self,
+        driver: BaseServoDriver = None,
+        force_mock: bool = False,
+        calibration_path: str = "config/servo_calibration.json",
+    ):
         self.lock = threading.RLock()
         self.arm_model = ArmModel()
         self.dt = 1.0 / ACTUATION_LOOP_RATE_HZ
         self.is_mock = False
+        self.calibration_path = calibration_path
+        self.servo_calibrated_limits = {}
+        self.is_armed = False
 
+        # 1. Arming Gate: Validate Servo Calibration File
+        self.is_armed = self._load_servo_calibration(calibration_path)
+
+        # 2. Driver Discovery
         if driver is not None:
             self.driver = driver
         elif force_mock or SIMULATION_MODE:
@@ -70,17 +89,57 @@ class ArmController:
                     self.driver = MockServoDriver()
                     self.is_mock = True
 
-        # Initialize arm & hand to Home Position
+        # 3. Initialize arm & hand to Calibrated Home Position
         self.current_angles = DEFAULT_BUILD_PHASE_HOME.copy()
-        # Merge canonical kinematic home positions for any kinematics queries
+        for j, cfg in self.servo_calibrated_limits.items():
+            self.current_angles[j] = cfg["home_deg"]
+
         for k, v in self.arm_model.home_angles_deg.items():
             if k not in self.current_angles:
                 self.current_angles[k] = v
 
-        self.driver.set_all_angles(self.current_angles)
+        if self.is_armed:
+            self.driver.set_all_angles(self.current_angles)
+
         self.current_force_n = 0.0
         self.is_emergency_stopped = False
-        logger.info("ArmController ready.")
+        logger.info(f"ArmController ready (Armed: {self.is_armed}).")
+
+    def _load_servo_calibration(self, path: str) -> bool:
+        """Loads and validates per-servo calibrated min/max/home limits. Fails closed."""
+        if not path or not os.path.exists(path):
+            logger.critical(f"Servo calibration file '{path}' NOT found! ArmController refusing to arm.")
+            return False
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            servos = data.get("servos", {})
+            if not servos:
+                logger.critical(f"Servo calibration file '{path}' has no servos configured! Refusing to arm.")
+                return False
+            for name, cfg in servos.items():
+                min_d = float(cfg.get("min_deg", 0.0))
+                max_d = float(cfg.get("max_deg", 180.0))
+                home_d = float(cfg.get("home_deg", 90.0))
+                self.servo_calibrated_limits[name] = {
+                    "min_deg": min_d,
+                    "max_deg": max_d,
+                    "home_deg": home_d,
+                }
+            logger.info(f"[ARMED] Calibrated servo bounds loaded ({len(self.servo_calibrated_limits)} servos). ArmController is ARMED.")
+            return True
+        except Exception as e:
+            logger.critical(f"Error parsing servo calibration file '{path}': {e}. Refusing to arm.")
+            return False
+
+    def clamp_joint_angle(self, joint_name: str, angle: float) -> float:
+        """Clamps angle to calibrated hardware limits for joint. Defaults to [0.0, 180.0]."""
+        cfg = self.servo_calibrated_limits.get(joint_name)
+        if not cfg and joint_name in SERVO_ALIASES:
+            cfg = self.servo_calibrated_limits.get(SERVO_ALIASES[joint_name])
+        if cfg:
+            return float(np.clip(angle, cfg["min_deg"], cfg["max_deg"]))
+        return float(np.clip(angle, 0.0, 180.0))
 
     def get_joint_angles(self) -> dict[str, float]:
         """Returns current joint angles in degrees."""
@@ -88,11 +147,20 @@ class ArmController:
 
     def go_to_home(self, duration_s: float = 1.5):
         """Moves arm and hand smoothly to default home position."""
-        self.move_to_angles(DEFAULT_BUILD_PHASE_HOME, duration_s=duration_s)
+        if not self.is_armed:
+            logger.warning("ArmController is UNARMED. Ignoring go_to_home.")
+            return
+        home_pose = DEFAULT_BUILD_PHASE_HOME.copy()
+        for j, cfg in self.servo_calibrated_limits.items():
+            home_pose[j] = cfg["home_deg"]
+        self.move_to_angles(home_pose, duration_s=duration_s)
 
     def move_to_angles(self, target_angles: dict[str, float], duration_s: float = 1.0):
         """Directly interpolates to target joint configuration."""
         with self.lock:
+            if not self.is_armed:
+                logger.warning("ArmController is UNARMED. Ignoring move command.")
+                return
             if self.is_emergency_stopped:
                 logger.warning("Arm is in EMERGENCY STOP state. Ignoring move command.")
                 return
@@ -104,7 +172,8 @@ class ArmController:
                     break
                 alpha = step / steps
                 interp_angles = {}
-                for j, target_val in target_angles.items():
+                for j, raw_val in target_angles.items():
+                    target_val = self.clamp_joint_angle(j, raw_val)
                     q0 = self.current_angles.get(j, target_val)
                     interp_angles[j] = q0 + alpha * (target_val - q0)
 
@@ -118,6 +187,9 @@ class ArmController:
         abort_check_fn: optional callable returning True if execution should abort immediately.
         """
         with self.lock:
+            if not self.is_armed:
+                logger.warning("ArmController is UNARMED. Refusing trajectory execution.")
+                return False
             if self.is_emergency_stopped:
                 return False
 
@@ -130,8 +202,9 @@ class ArmController:
                     return False
 
                 clamped = self.arm_model.clamp_angles(pt.angles_deg)
-                self.driver.set_all_angles(clamped)
-                self.current_angles.update(clamped)
+                clamped_calib = {j: self.clamp_joint_angle(j, val) for j, val in clamped.items()}
+                self.driver.set_all_angles(clamped_calib)
+                self.current_angles.update(clamped_calib)
 
                 sleep_time = max(0.001, pt.time_s - last_t)
                 time.sleep(sleep_time)
@@ -145,21 +218,35 @@ class ArmController:
         Drives all 5 fingers simultaneously (CH 0-4: Thumb, Index, Middle, Ring, Pinky).
         """
         with self.lock:
+            if not self.is_armed:
+                logger.warning("ArmController is UNARMED. Refusing gripper command.")
+                return
             percent = float(np.clip(percent, 0.0, 100.0))
             self.driver.set_joint_angle("joint_6_gripper", percent)
             self.current_angles["joint_6_gripper"] = percent
 
-            # 100% open -> 0 deg flexion; 0% open -> 180 deg flexion
-            flexion_deg = (1.0 - (percent / 100.0)) * 180.0
+            # 100% open -> min flexion (open); 0% open -> max flexion (closed)
             for finger in ("finger_thumb", "finger_index", "finger_middle", "finger_ring", "finger_pinky"):
+                cfg = self.servo_calibrated_limits.get(finger, {"min_deg": 0.0, "max_deg": 180.0})
+                f_min = cfg["min_deg"]
+                f_max = cfg["max_deg"]
+                flexion_deg = f_min + (1.0 - (percent / 100.0)) * (f_max - f_min)
+                flexion_deg = self.clamp_joint_angle(finger, flexion_deg)
                 self.driver.set_joint_angle(finger, flexion_deg)
                 self.current_angles[finger] = flexion_deg
 
     def set_individual_finger(self, finger_name: str, percent_open: float):
         """Drives a specific individual finger (0.0 = closed, 100.0 = open)."""
         with self.lock:
+            if not self.is_armed:
+                logger.warning("ArmController is UNARMED. Refusing finger command.")
+                return
             percent = float(np.clip(percent_open, 0.0, 100.0))
-            flexion_deg = (1.0 - (percent / 100.0)) * 180.0
+            cfg = self.servo_calibrated_limits.get(finger_name, {"min_deg": 0.0, "max_deg": 180.0})
+            f_min = cfg["min_deg"]
+            f_max = cfg["max_deg"]
+            flexion_deg = f_min + (1.0 - (percent / 100.0)) * (f_max - f_min)
+            flexion_deg = self.clamp_joint_angle(finger_name, flexion_deg)
             self.driver.set_joint_angle(finger_name, flexion_deg)
             self.current_angles[finger_name] = flexion_deg
 
@@ -169,6 +256,9 @@ class ArmController:
         Closes fingers gradually while reading real FSR feedback from ESP32 until target force is reached.
         """
         with self.lock:
+            if not self.is_armed:
+                logger.warning("ArmController is UNARMED. Refusing force grasp.")
+                return False
             target_force_n = float(np.clip(target_force_n, FORCE_MIN_N, FORCE_MAX_N))
             logger.info(f"Executing force grasp. Target Force: {target_force_n:.2f} N")
 
@@ -226,12 +316,14 @@ class ArmController:
                 time.sleep(self.dt)
 
             self.current_force_n = measured_tactile if measured_tactile is not None else applied_force
-            # Grasp settled check
             return (applied_force >= (target_force_n * 0.8)) or (measured_tactile is not None and measured_tactile >= 0.5)
 
     def release_grasp(self, open_percent: float = 100.0):
         """Opens fingers fully to release object."""
         with self.lock:
+            if not self.is_armed:
+                logger.warning("ArmController is UNARMED. Refusing release command.")
+                return
             self.set_gripper_opening_percent(open_percent)
             self.current_force_n = 0.0
             if isinstance(self.driver, MockServoDriver):
