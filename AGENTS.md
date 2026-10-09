@@ -271,7 +271,7 @@ PYTHONPATH=. .venv/bin/python tests/test_phase8_flight_qualification.py --real
 ```
 
 ### 6.11 Phase 9: Full Fleet Production Readiness & Clinical Certification Verification
-To verify 3D perception throughput (> 40 FPS), biosignal DSP noise rejection (> 20dB 50Hz notch attenuation, < 1ms DAQ chunk latency), dual-mode kinematic solvers benchmark (Analytical 49/50 vs Numerical DLS 50/50), quintic polynomial boundary velocity and acceleration invariants, 12-channel PCA9685 pulse boundary invariants, 4x AS5600 12-bit magnetic encoder resolution (0.0879°/LSB), complete multimodal conflict arbitration truth table with 0ms emergency stop override, 100 Hz UART continuous telemetry with 5-finger tactile physics, and master subsystem health (10/10 operational):
+To verify 3D perception throughput (> 40 FPS), biosignal DSP noise rejection (> 20dB 50Hz notch attenuation, < 1ms DAQ chunk latency), dual-mode kinematic solvers benchmark (Analytical 49/50 vs Numerical DLS 50/50), quintic polynomial boundary velocity and acceleration invariants, 12-channel PCA9685 pulse boundary invariants, 4x AS5600 12-bit magnetic encoder resolution (0.0879°/LSB), complete multimodal conflict arbitration truth table with sub-50ms emergency stop override, 100 Hz UART continuous telemetry with 5-finger tactile physics, and master subsystem health (10/10 operational):
 ```bash
 PYTHONPATH=. .venv/bin/python tests/test_phase9_production_fleet.py --mock
 # On physical Jetson Orin:

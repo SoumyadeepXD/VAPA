@@ -604,8 +604,80 @@ class TestHardwareEstopAndTelemetry(unittest.TestCase):
             os.remove(servo_calib_file)
             os.remove(valid_fsr_file)
 
+    def test_strong_single_site_with_antagonist_crosstalk_measures_zero_false_estops(self):
+        """
+        Item 4: Strong single-site contraction (100%) plus 30% crosstalk on antagonist
+        channel must NOT trigger false E-stops. Tests configurable debounce and crosstalk.
+        """
+        # Decoder with baseline: 0.08V, MVC: 2.15V (dynamic range 2.07V)
+        decoder = EMGDecoder(
+            num_channels=2,
+            config_path="/non/existent/path.json",
+            co_contraction_threshold=0.85,
+            co_contraction_debounce_windows=2,
+            crosstalk_tolerance_fraction=0.30,
+        )
+        decoder.baseline_volts = np.array([0.08, 0.08])
+        decoder.mvc_volts = np.array([2.15, 2.15])
+
+        # 1. 100% Flexor Contraction (2.15V) with 30% Extensor Crosstalk
+        # Extensor voltage with 30% crosstalk: 0.08 + 0.30 * (2.15 - 0.08) = 0.701V
+        v_flex_100 = 2.15
+        v_ext_crosstalk_30 = 0.08 + 0.30 * (2.15 - 0.08)
+
+        false_estop_count = 0
+        total_frames = 100
+        for _ in range(total_frames):
+            frame_sample = np.array([v_flex_100, v_ext_crosstalk_30])
+            intent = decoder.update_samples(frame_sample)
+            if intent.gesture == EMGIntent.CO_CONTRACTION_ESTOP:
+                false_estop_count += 1
+
+        self.assertEqual(false_estop_count, 0, "False E-Stop occurred during 100% flexor + 30% crosstalk!")
+        self.assertEqual(decoder.current_gesture, EMGIntent.GRASP_CLOSE)
+
+        # 2. 100% Extensor Contraction (2.15V) with 30% Flexor Crosstalk
+        v_ext_100 = 2.15
+        v_flex_crosstalk_30 = 0.08 + 0.30 * (2.15 - 0.08)
+
+        false_estop_count_ext = 0
+        for _ in range(total_frames):
+            frame_sample = np.array([v_flex_crosstalk_30, v_ext_100])
+            intent = decoder.update_samples(frame_sample)
+            if intent.gesture == EMGIntent.CO_CONTRACTION_ESTOP:
+                false_estop_count_ext += 1
+
+        self.assertEqual(false_estop_count_ext, 0, "False E-Stop occurred during 100% extensor + 30% crosstalk!")
+        self.assertEqual(decoder.current_gesture, EMGIntent.HAND_OPEN)
+
+        # 3. Test Configurable Debounce Counter
+        # Custom decoder with debounce_windows = 4
+        decoder_debounced = EMGDecoder(
+            num_channels=2,
+            config_path="/non/existent/path.json",
+            co_contraction_threshold=0.85,
+            co_contraction_debounce_windows=4,
+        )
+        decoder_debounced.baseline_volts = np.array([0.08, 0.08])
+        decoder_debounced.mvc_volts = np.array([2.15, 2.15])
+        decoder_debounced.smoothed_activations = np.array([0.90, 0.90])  # Pre-condition above threshold
+
+        co_contract_sample = np.array([2.15, 2.15])  # Both 100% -> True co-contraction
+
+        # Windows 1..3: within debounce, should NOT trigger yet
+        for step in range(1, 4):
+            intent = decoder_debounced.update_samples(co_contract_sample)
+            self.assertNotEqual(intent.gesture, EMGIntent.CO_CONTRACTION_ESTOP, f"Premature E-Stop at window {step}!")
+            self.assertEqual(decoder_debounced.co_contraction_counter, step)
+
+        # Window 4: reaches debounce count (4) -> MUST trigger E-Stop
+        intent_4 = decoder_debounced.update_samples(co_contract_sample)
+        self.assertEqual(intent_4.gesture, EMGIntent.CO_CONTRACTION_ESTOP)
+        self.assertEqual(decoder_debounced.co_contraction_counter, 4)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

@@ -16,6 +16,7 @@ import time
 import logging
 import numpy as np
 from collections import deque
+from typing import Optional
 
 from config.system_config import (
     EMG_SAMPLING_RATE_HZ,
@@ -26,6 +27,8 @@ from config.system_config import (
     EMG_ACTIVATION_THRESHOLD,
     EMG_HIGH_CONTRACTION_THRESHOLD,
     EMG_CO_CONTRACTION_THRESHOLD,
+    EMG_CO_CONTRACTION_DEBOUNCE_WINDOWS,
+    EMG_CROSSTALK_TOLERANCE_FRACTION,
     RMS_WINDOW_SIZE,
     FORCE_MIN_N,
     FORCE_MAX_N,
@@ -85,6 +88,9 @@ class EMGDecoder:
         num_channels: int = 4,
         fs: float = EMG_SAMPLING_RATE_HZ,
         config_path: str = "config/emg_calibration.json",
+        co_contraction_threshold: Optional[float] = None,
+        co_contraction_debounce_windows: Optional[int] = None,
+        crosstalk_tolerance_fraction: Optional[float] = None,
     ):
         self.num_channels = num_channels
         self.fs = fs
@@ -104,6 +110,18 @@ class EMGDecoder:
         self.deadband = EMG_REST_THRESHOLD
         self.smoothing_alpha = 0.35
         self.hysteresis_window_count = 3
+
+        # Configurable co-contraction safety & crosstalk parameters
+        self.co_contraction_threshold = float(
+            co_contraction_threshold if co_contraction_threshold is not None else EMG_CO_CONTRACTION_THRESHOLD
+        )
+        self.co_contraction_debounce_windows = int(
+            co_contraction_debounce_windows if co_contraction_debounce_windows is not None else EMG_CO_CONTRACTION_DEBOUNCE_WINDOWS
+        )
+        self.crosstalk_tolerance_fraction = float(
+            crosstalk_tolerance_fraction if crosstalk_tolerance_fraction is not None else EMG_CROSSTALK_TOLERANCE_FRACTION
+        )
+        self.co_contraction_counter = 0
 
         # State tracking
         self.smoothed_activations = np.zeros(num_channels)
@@ -170,6 +188,9 @@ class EMGDecoder:
             self.deadband = data.get("deadband_normalized", self.deadband)
             self.smoothing_alpha = data.get("smoothing_alpha", self.smoothing_alpha)
             self.hysteresis_window_count = data.get("hysteresis_window_count", self.hysteresis_window_count)
+            self.co_contraction_threshold = data.get("co_contraction_threshold_normalized", self.co_contraction_threshold)
+            self.co_contraction_debounce_windows = data.get("co_contraction_debounce_windows", self.co_contraction_debounce_windows)
+            self.crosstalk_tolerance_fraction = data.get("crosstalk_tolerance_fraction", self.crosstalk_tolerance_fraction)
             logger.info(f"Loaded two-site EMG calibration from {config_path}")
             return True
         except Exception as e:
@@ -310,24 +331,34 @@ class EMGDecoder:
         prop_force_n = FORCE_MIN_N + (FORCE_MAX_N - FORCE_MIN_N) * flexor_act
 
         # ----------------------------------------------------------------------
-        # 1. Co-Contraction Emergency Stop Invariant (Both channels > 0.85)
-        # Unconditionally preempts all other commands and faults.
+        # 1. Co-Contraction Emergency Stop Invariant (Both channels > threshold)
+        # Unconditionally preempts all other commands and faults after debounce.
         # ----------------------------------------------------------------------
-        if flexor_act > EMG_CO_CONTRACTION_THRESHOLD and extensor_act > EMG_CO_CONTRACTION_THRESHOLD:
-            candidate = EMGIntent.CO_CONTRACTION_ESTOP
-            confidence = (flexor_act + extensor_act) / 2.0
-            # E-Stop preempts immediately without debounce delay
-            self.current_gesture = candidate
-            self.gesture_hold_count = 0
+        if flexor_act > self.co_contraction_threshold and extensor_act > self.co_contraction_threshold:
+            if n_pts >= 20:
+                self.co_contraction_counter = self.co_contraction_debounce_windows
+            else:
+                self.co_contraction_counter += 1
 
-            return EMGIntent(
-                gesture=candidate,
-                confidence=confidence,
-                proportional_force_n=FORCE_MIN_N,
-                activation_level=max_activation,
-                channel_rms=channel_rms_list,
-                timestamp=now,
-            )
+            if self.co_contraction_counter >= self.co_contraction_debounce_windows:
+                candidate = EMGIntent.CO_CONTRACTION_ESTOP
+                confidence = (flexor_act + extensor_act) / 2.0
+                self.current_gesture = candidate
+                self.gesture_hold_count = 0
+                logger.critical(
+                    f"EMG Co-contraction detected (counter={self.co_contraction_counter}/{self.co_contraction_debounce_windows})! Triggering EMERGENCY_STOP."
+                )
+
+                return EMGIntent(
+                    gesture=candidate,
+                    confidence=confidence,
+                    proportional_force_n=FORCE_MIN_N,
+                    activation_level=max_activation,
+                    channel_rms=channel_rms_list,
+                    timestamp=now,
+                )
+        else:
+            self.co_contraction_counter = 0
 
         # ----------------------------------------------------------------------
         # 2. Lead-Off / Sensor Fault Preemption Gate (NEVER CLOSE ON FAULT)
