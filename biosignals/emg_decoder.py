@@ -202,9 +202,10 @@ class EMGDecoder:
             self.lead_off_flag = True
             self.fault_reason = f"Manual lead-off active on channels {list(self._manual_lead_off_channels)}"
 
-        # Detect domain: Volts (0-3.3V) vs Microvolts (raw DSP ~ 0-300 uV)
-        sample_max = float(np.max(np.abs(new_samples)))
-        is_volts_domain = (sample_max < 10.0 and sample_max > 0.0)
+        # Detect domain: Volts unipolar envelope (0.0 - 3.3V) vs Microvolts bipolar AC DSP (~ -300 to +300 uV)
+        sample_min = float(np.min(new_samples))
+        sample_max = float(np.max(new_samples))
+        is_volts_domain = (sample_min >= -0.05 and sample_max <= 3.6)
 
         channel_rms_list = []
         norm_activations = []
@@ -240,20 +241,31 @@ class EMGDecoder:
             self.buffers[ch].extend(ch_data.tolist())
             buf_arr = np.array(self.buffers[ch])
 
-            # Apply Digital Filters
-            filtered = self.filter.filter_signal(buf_arr, "notch")
-            filtered = self.filter.filter_signal(filtered, "bandpass")
+            if is_volts_domain:
+                # Volts domain: conditioned envelope from MyoWare 2.0 ENV output
+                current_val = float(np.mean(ch_data))
+                channel_rms_list.append(current_val)
 
-            # Calculate RMS envelope
-            rms_vals = compute_rms_envelope(filtered, window_size=min(len(filtered), RMS_WINDOW_SIZE))
-            current_rms = float(np.mean(rms_vals[-20:])) if len(rms_vals) >= 20 else float(np.mean(rms_vals))
-            channel_rms_list.append(current_rms)
+                base = self.baseline_volts[ch] if ch < len(self.baseline_volts) else 0.08
+                mvc = self.mvc_volts[ch] if ch < len(self.mvc_volts) else 2.15
+                dyn_range = max(0.1, mvc - base)
+                norm_act = np.clip((current_val - base) / dyn_range, 0.0, 1.0)
+                norm_activations.append(float(norm_act))
+            else:
+                # Microvolts domain: Apply Digital Filters to raw AC signal
+                filtered = self.filter.filter_signal(buf_arr, "notch")
+                filtered = self.filter.filter_signal(filtered, "bandpass")
 
-            # Normalize activation (0.0 to 1.0)
-            base = self.baseline_rms[ch]
-            max_v = max(base + 0.1, self.max_rms[ch])
-            norm_act = np.clip((current_rms - base) / (max_v - base), 0.0, 1.0)
-            norm_activations.append(float(norm_act))
+                # Calculate RMS envelope
+                rms_vals = compute_rms_envelope(filtered, window_size=min(len(filtered), RMS_WINDOW_SIZE))
+                current_rms = float(np.mean(rms_vals[-20:])) if len(rms_vals) >= 20 else float(np.mean(rms_vals))
+                channel_rms_list.append(current_rms)
+
+                # Normalize activation (0.0 to 1.0)
+                base = self.baseline_rms[ch]
+                max_v = max(base + 0.1, self.max_rms[ch])
+                norm_act = np.clip((current_rms - base) / (max_v - base), 0.0, 1.0)
+                norm_activations.append(float(norm_act))
 
         while len(norm_activations) < self.num_channels:
             norm_activations.append(0.0)

@@ -133,12 +133,21 @@ class ArmController:
             return False
 
     def clamp_joint_angle(self, joint_name: str, angle: float) -> float:
-        """Clamps angle to calibrated hardware limits for joint. Defaults to [0.0, 180.0]."""
-        cfg = self.servo_calibrated_limits.get(joint_name)
-        if not cfg and joint_name in SERVO_ALIASES:
-            cfg = self.servo_calibrated_limits.get(SERVO_ALIASES[joint_name])
-        if cfg:
+        """Clamps angle to calibrated hardware limits for servo or kinematic joint bounds."""
+        if joint_name in self.servo_calibrated_limits:
+            cfg = self.servo_calibrated_limits[joint_name]
             return float(np.clip(angle, cfg["min_deg"], cfg["max_deg"]))
+        if joint_name in self.arm_model.limits:
+            min_v, max_v, _ = self.arm_model.limits[joint_name]
+            return float(np.clip(angle, min_v, max_v))
+        if joint_name in SERVO_ALIASES:
+            alias = SERVO_ALIASES[joint_name]
+            if alias in self.servo_calibrated_limits:
+                cfg = self.servo_calibrated_limits[alias]
+                return float(np.clip(angle, cfg["min_deg"], cfg["max_deg"]))
+            if alias in self.arm_model.limits:
+                min_v, max_v, _ = self.arm_model.limits[alias]
+                return float(np.clip(angle, min_v, max_v))
         return float(np.clip(angle, 0.0, 180.0))
 
     def get_joint_angles(self) -> dict[str, float]:

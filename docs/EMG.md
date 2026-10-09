@@ -375,3 +375,181 @@ Evaluated over 100 consecutive 200 ms sliding windows on x86_64 Linux host (meas
     ```
 * [ ] **Review Enable Criteria**:
   * Review Section 6 proposals and approve retraining criteria before toggling `EMG_DECODER = "classifier"`.
+
+---
+
+## 11. Two-Site Antagonist EMG & Integrated Safety Layer Architecture
+
+### 11.1 Two-Site Hardware Mapping & Sensor Interfacing
+
+To overcome the physiological and mathematical limitations of single-channel envelope control documented in Section 4, VAPA employs a dual-site antagonist surface EMG architecture:
+
+* **Channel 0 — Flexor Compartment (FDS / FDP)**:
+  * Sensor: MyoWare 2.0 (ENV output, unipolar smoothed envelope $0.0 - 3.3\text{V}$)
+  * ADC Converter: Primary ADS1115 #1 (I2C Address `0x48`), Input Pin `A0`
+  * Action: Drives proportional finger flexion and grasping (`GRASP_CLOSE`)
+* **Channel 1 — Extensor Compartment (EDC)**:
+  * Sensor: MyoWare 2.0 (ENV output, unipolar smoothed envelope $0.0 - 3.3\text{V}$)
+  * ADC Converter: Secondary ADS1115 #2 (I2C Address `0x49`), Input Pin `A2`
+  * Action: Drives synchronized finger extension and hand opening (`HAND_OPEN`)
+* **Hardware Configuration**:
+  ```python
+  # config/hardware_config.py
+  NUM_EMG_CHANNELS = 2
+  ADS1115_PRIMARY_ADDR = 0x48    # ADS1115 #1 on I2C bus
+  ADS1115_SECONDARY_ADDR = 0x49  # ADS1115 #2 on I2C bus
+  EMG_CHANNEL_MAP = {
+      0: (ADS1115_PRIMARY_ADDR, 0),    # Ch 0: Flexor -> ADS1115 #1 A0
+      1: (ADS1115_SECONDARY_ADDR, 2),  # Ch 1: Extensor -> ADS1115 #2 A2
+  }
+  ```
+
+---
+
+### 11.2 High-Speed UART Load Analysis: JSON vs Compact Binary Framing
+
+The system streams telemetry from the ESP32 to the Jetson Orin at 100 Hz (`/dev/ttyTHS1`).
+
+#### A. Original JSON Framing Analysis
+* Single-channel JSON frame: ~110 bytes $\to 11,000\text{ bytes/s}$.
+* Two-channel JSON frame:
+  ```json
+  {"seq":1425,"fsr":[0.420,0.850,0.120,0.050,0.000],"emg_flex":0.820,"emg_ext":0.110,"emg":0.820,"eeg":0.315,"estop":0,"ts":482910}
+  ```
+  Size: ~153 bytes per frame $\to 15,300\text{ bytes/s}$ at 100 Hz.
+* **UART Saturation at 115200 baud** (10 bits per byte framing = 11,520 bytes/s capacity):
+  $$\text{Bus Load} = \frac{15,300\text{ B/s}}{11,520\text{ B/s}} = 132.8\% \quad \text{\bf [FATAL SATURATION / PACKET LOSS]}$$
+* **Upgrade to 460800 baud** (46,080 bytes/s capacity):
+  $$\text{Bus Load} = \frac{15,300\text{ B/s}}{46,080\text{ B/s}} = 33.2\% \quad (\le 50\% \text{ safety threshold})$$
+  Configured in `config/hardware_config.py`: `JETSON_UART_BAUD = 460800`.
+
+#### B. Compact Binary Framing with CRC16-CCITT (33 Bytes)
+To provide deterministic latency and maximum channel efficiency, an optimized binary frame format was implemented in `firmware/esp32_sensor_node/esp32_sensor_node.ino` and parsed non-blockingly in `biosignals/esp32_serial_receiver.py`:
+
+| Offset | Field Name | Type | Size | Description |
+| :---: | :--- | :---: | :---: | :--- |
+| **0–1** | Magic Sync Bytes | `uint8_t[2]` | 2 | Header synchronization words: `0xAA`, `0x55` |
+| **2–5** | Sequence Number | `uint32_t` | 4 | Monotonically increasing frame counter |
+| **6–9** | Timestamp | `uint32_t` | 4 | Microseconds / milliseconds tick |
+| **10–19**| 5x FSR Force Values | `uint16_t[5]` | 10 | 10-bit raw ADC / mV scaled tactile forces |
+| **20–21**| EMG Flexor Voltage | `uint16_t` | 2 | Millivolts ($0 - 3300\text{ mV}$) |
+| **22–23**| EMG Extensor Voltage | `uint16_t` | 2 | Millivolts ($0 - 3300\text{ mV}$) |
+| **24–25**| EEG Amplitude | `uint16_t` | 2 | Millivolts ($0 - 3300\text{ mV}$) |
+| **26–27**| AS5600 Angle 0 | `uint16_t` | 2 | 12-bit encoder ticks ($0 - 4095$) |
+| **28–29**| AS5600 Angle 1 | `uint16_t` | 2 | 12-bit encoder ticks ($0 - 4095$) |
+| **30** | Hardware Flags | `uint8_t` | 1 | Bit 0: E-Stop Button Pressed, Bit 1: OE Tripped, Bit 2: Force Exceeded |
+| **31–32**| CRC16-CCITT | `uint16_t` | 2 | Polynomial `0x1021`, seed `0xFFFF` across bytes 2–30 |
+| **Total**| **Frame Length** | — | **33 Bytes** | — |
+
+* **UART Saturation with 33-byte Binary Framing**:
+  * At 115200 baud: $\frac{3,300\text{ B/s}}{11,520\text{ B/s}} = \mathbf{28.6\%}$ load.
+  * At 460800 baud: $\frac{3,300\text{ B/s}}{46,080\text{ B/s}} = \mathbf{7.16\%}$ load.
+* **Auto-Resync Mechanism**: The receiver implements a byte-by-byte sliding-window state machine that discards corrupted bytes until encountering `0xAA 0x55` with valid CRC16, automatically recovering from transient bus noise in $< 1\text{ ms}$.
+
+---
+
+### 11.3 Antagonist Proportional Control & MVC Calibration
+
+The live control path strictly uses deterministic antagonist proportional control without ML (`EMG_DECODER = "threshold"`, `EMG_CLASSIFIER = False`):
+
+$$\text{Act}_{\text{flexor}} = \text{clip}\left(\frac{V_{\text{flex}} - V_{\text{base,flex}}}{V_{\text{mvc,flex}} - V_{\text{base,flex}}}, 0.0, 1.0\right)$$
+$$\text{Act}_{\text{extensor}} = \text{clip}\left(\frac{V_{\text{ext}} - V_{\text{base,ext}}}{V_{\text{mvc,ext}} - V_{\text{base,ext}}}, 0.0, 1.0\right)$$
+
+* **Smoothing**: Exponential Moving Average with smoothing factor $\alpha = 0.35$.
+* **Deadband**: Normalized activations below $0.12$ are truncated to $0.0$ to eliminate muscle relaxation ripple.
+* **Hysteresis**: State transitions require confirmation across 3 consecutive windows (30 ms debounce).
+* **Command Output**:
+  * Flexor dominant ($\text{Act}_{\text{flex}} \ge 0.25$ and $\text{Act}_{\text{flex}} > \text{Act}_{\text{ext}}$): Command = `GRASP_CLOSE` with proportional force:
+    $$F_{\text{grip}} = F_{\min} + (F_{\max} - F_{\min}) \cdot \text{Act}_{\text{flex}}$$
+  * Extensor dominant ($\text{Act}_{\text{ext}} \ge 0.25$ and $\text{Act}_{\text{ext}} > \text{Act}_{\text{flex}}$): Command = `HAND_OPEN`.
+  * Neither dominant: Command = `REST` (Hold current finger positions).
+* **Lead-Off / Rail Saturation Safety Gate**:
+  If either channel voltage exceeds $3.25\text{V}$ (rail saturation / short to 3.3V) or drops below $0.005\text{V}$ (open circuit / ground fault), the decoder forces `REST`, sets `lead_off_detected = True`, and strictly blocks `GRASP_CLOSE`.
+* **Two-Site MVC Calibration Tool (`tools/emg_training/calibrate_emg_mvc.py`)**:
+  Guides the user through 3 phases:
+  1. 10 seconds resting baseline (records $V_{\text{base,flex}}$, $V_{\text{base,ext}}$).
+  2. 5 seconds flexor maximum voluntary contraction (records $V_{\text{mvc,flex}}$).
+  3. 5 seconds extensor maximum voluntary contraction (records $V_{\text{mvc,ext}}$).
+  Saves personalized parameters to `config/emg_calibration.json`.
+
+---
+
+### 11.4 Hardware Safety Layers & Fail-Closed Invariants
+
+To ensure physical participant and hardware safety, four independent hardware and software safety layers operate in parallel:
+
+```
+                                  [SAFETY TRUTH MATRIX]
+ ┌────────────────────────────────────────────────────────────────────────────────────────┐
+ │ Layer 0: Co-Contraction Override (Flexor > 0.85 AND Extensor > 0.85) ──► 0ms E-STOP   │
+ │ Layer 1: Hardware E-Stop Button (ESP32 GPIO 27 active-low)           ──► 0ms E-STOP   │
+ │ Layer 2: Firmware FSR Over-Force Ceiling (> 12.0 N)                  ──► Trip PCA /OE │
+ │ Layer 3: Jetson-to-ESP32 20 Hz Heartbeat Loss (> 200 ms timeout)     ──► Trip PCA /OE │
+ │ Layer 4: Fail-Closed Servo Arming Gate (Missing calibration file)     ──► Refuse Arm   │
+ └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Unconditional Co-Contraction Preemption**:
+   Simultaneous flexor and extensor activation $> 0.85$ triggers `EMERGENCY_STOP` before evaluating single-channel lead-off or any intent arbitration, regardless of whether `EMG_DECODER` is set to `"threshold"` or `"classifier"`.
+2. **ESP32 20 Hz Watchdog & PCA9685 /OE Pin Control**:
+   The Jetson transmits a heartbeat byte (`'H'`) over UART at 20 Hz. If the ESP32 receives no heartbeat for $> 200\text{ ms}$, or if any FSR tactile sensor exceeds the safety ceiling of $12.0\text{ N}$, the ESP32 firmware pulls the PCA9685 Output Enable (`/OE`) pin (GPIO 25) HIGH, instantly cutting all PWM signals and disabling servo torque.
+3. **Physical E-Stop Push-Button**:
+   A normally-open mushroom e-stop button on ESP32 GPIO 27 (active-low with internal pull-up) is sampled at 100 Hz. When pressed, the ESP32 sets the e-stop telemetry flag, trips PCA9685 `/OE`, and transmits the flag to the Jetson Orin to force the FSM into `EMERGENCY_STOP`.
+4. **Fail-Closed Servo Arming Gate (`config/servo_calibration.json`)**:
+   `ArmController._load_servo_calibration()` validates that all 9 servos have calibrated `min_deg`, `max_deg`, and `home_deg`.
+   * **Refusal Policy**: If `config/servo_calibration.json` is missing or unparseable, the controller prints a critical error, sets `self.armed = False`, and unconditionally blocks all servo motion commands (`set_servo_angle`, `set_joint_angles`, `set_finger_angles`).
+   * **Jog Calibration CLI (`tools/calibrate_servos.py`)**: An interactive tool with slow jogging (1° fine, 5° coarse) and live AS5600 magnetic encoder verification allows safe physical range calibration.
+
+---
+
+### 11.5 Vision-to-Grip Profile Linking & Safety Invariants
+
+Tactile grasping forces and grasp geometries are adapted to detected objects using `config/grip_profiles.yaml` and `vision/grip_profiles.py` (`GripProfileManager`):
+
+* **Configured Grip Profiles**:
+  * `mug`: $4.5\text{ N}$ target, $7.0\text{ N}$ ceiling, `power` grasp, 0.70 speed.
+  * `cup`: $2.5\text{ N}$ target, $4.0\text{ N}$ ceiling, `pinch` grasp, 0.60 speed.
+  * `bottle`: $5.0\text{ N}$ target, $8.0\text{ N}$ ceiling, `cylindrical` grasp, 0.70 speed.
+  * `can`: $3.5\text{ N}$ target, $6.0\text{ N}$ ceiling, `cylindrical` grasp, 0.65 speed.
+  * `apple` / `orange`: $3.0\text{ N}$ target, $5.0\text{ N}$ ceiling, `spherical` grasp, 0.60 speed.
+  * `banana`: $2.0\text{ N}$ target, $3.5\text{ N}$ ceiling, `pinch` grasp, 0.50 speed.
+  * `egg`: $1.2\text{ N}$ target, $2.0\text{ N}$ ceiling, `precision_pinch` grasp, 0.35 speed (delicate object protection).
+  * `default`: $3.0\text{ N}$ target, $6.0\text{ N}$ ceiling, `power` grasp, 0.60 speed.
+* **Core Safety Invariants**:
+  1. **Perception Cannot Initiate Motion**:
+     Vision detection alone yields `MultimodalCommand.NO_OP`. The arm never reaches or grasps without conscious neural/muscular user intent.
+  2. **Binding at Grasp Start Only**:
+     The object's grip profile is locked when the user initiates grasping (`START_GRASP`).
+  3. **Monotonic Force Ceiling Lowering Mid-Grasp**:
+     If perception updates during an active grasp (`HOLDING` or `GRASPING`), the manager may only **lower** the force ceiling (e.g., if a fragile object is recognized late). It strictly rejects any request to raise the force ceiling mid-grasp.
+  4. **Fallback on Low Confidence or Stale Perception**:
+     If detector confidence $< 0.50$ or perception latency exceeds $1.0\text{ s}$, the manager falls back to the safe `default` profile.
+  5. **Camera-Off / EMG-Alone Autonomy**:
+     If the camera is disconnected, powered off, or detects zero objects, the arm operates fully and safely from EMG alone (flexor $\to$ close with default force limits, extensor $\to$ open).
+
+---
+
+### 11.6 Complete Verification Test Suite (`tests/test_two_site_emg.py`)
+
+A comprehensive 15-test verification suite was executed:
+
+| Test Case | Description | Result |
+| :--- | :--- | :---: |
+| `test_two_site_rest_baseline` | Relaxed baseline outputs REST without drift | **PASS** |
+| `test_two_site_flexor_grasp` | Flexor activation triggers GRASP_CLOSE with proportional force | **PASS** |
+| `test_two_site_extensor_open` | Extensor activation triggers HAND_OPEN | **PASS** |
+| `test_two_site_co_contraction_estop` | Simultaneous flexor/extensor triggers CO_CONTRACTION_ESTOP | **PASS** |
+| `test_co_contraction_with_classifier_enabled` | Co-contraction preempts ML classifier immediately | **PASS** |
+| `test_lead_off_detection_flexor_rail` | Saturated flexor voltage forces REST and flags lead-off | **PASS** |
+| `test_lead_off_detection_flatline` | Ground-fault flatline forces REST and blocks grasping | **PASS** |
+| `test_servo_calibration_refusal_when_missing` | Missing calibration file causes ArmController to refuse arming | **PASS** |
+| `test_servo_bounds_clamping` | Commanded servo angles clamped to calibrated bounds | **PASS** |
+| `test_grip_profiles_loading_and_matching` | Profile manager loads YAML and matches object classes | **PASS** |
+| `test_grip_profiles_mid_grasp_monotonic_ceiling` | Mid-grasp profile updates only lower force ceiling | **PASS** |
+| `test_camera_off_emg_alone_operation` | Arm operates purely from EMG when camera is off / 0 targets | **PASS** |
+| `test_perception_cannot_initiate_motion` | High-confidence perception alone produces NO_OP | **PASS** |
+| `test_binary_telemetry_framing_crc` | 33-byte binary frame with CRC16 parses accurately | **PASS** |
+| `test_binary_telemetry_crc_corruption_recovery` | Corrupted binary frames rejected; parser auto-resyncs | **PASS** |
+| **Total** | **All 15 Tests Passed (100% Success Rate)** | **15 / 15 PASS** |
+
+---
