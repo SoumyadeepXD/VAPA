@@ -183,6 +183,9 @@ def run_guided_calibration(subject: str, config_out: str, force_mock: bool = Fal
     high_ext_th = rest_ext_mean + 0.65 * dyn_ext
 
     calib_data = {
+        "calibrated": True,
+        "timestamp": time.time(),
+        "tool_version": "1.0.0",
         "subject_id": subject,
         "calibration_timestamp": time.time(),
         "channels": {

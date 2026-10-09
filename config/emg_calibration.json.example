@@ -1,0 +1,39 @@
+{
+  "calibrated": false,
+  "timestamp": "",
+  "tool_version": "",
+  "description": "PLACEHOLDER TEMPLATE - Run tools/emg_training/calibrate_emg_mvc.py on physical hardware before arming",
+  "subject_id": "PLACEHOLDER_UNMEASURED",
+  "channels": {
+    "flexor": {
+      "channel_idx": 0,
+      "site": "forearm_flexor",
+      "muscle": "flexor_digitorum_superficialis",
+      "action": "GRASP_CLOSE",
+      "rest_mean_v": 0.0,
+      "rest_std_v": 0.0,
+      "mvc_peak_v": 0.0,
+      "dynamic_range_v": 0.0,
+      "rest_threshold_v": 0.0,
+      "activation_threshold_v": 0.0,
+      "high_contraction_threshold_v": 0.0
+    },
+    "extensor": {
+      "channel_idx": 1,
+      "site": "forearm_extensor",
+      "muscle": "extensor_digitorum_communis",
+      "action": "HAND_OPEN",
+      "rest_mean_v": 0.0,
+      "rest_std_v": 0.0,
+      "mvc_peak_v": 0.0,
+      "dynamic_range_v": 0.0,
+      "rest_threshold_v": 0.0,
+      "activation_threshold_v": 0.0,
+      "high_contraction_threshold_v": 0.0
+    }
+  },
+  "deadband_normalized": 0.12,
+  "co_contraction_threshold_normalized": 0.85,
+  "smoothing_alpha": 0.35,
+  "hysteresis_window_count": 3
+}

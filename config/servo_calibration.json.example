@@ -1,7 +1,8 @@
 {
-  "version": "1.0",
-  "calibration_date": "2026-10-09",
-  "description": "VAPA 9-Servo Calibrated Per-Joint Bounds and Safe Rest Pose",
+  "calibrated": false,
+  "timestamp": "",
+  "tool_version": "",
+  "description": "PLACEHOLDER TEMPLATE - Run tools/calibrate_servos.py on physical hardware before arming",
   "servos": {
     "finger_thumb": {
       "channel": 0,

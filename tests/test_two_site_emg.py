@@ -147,27 +147,125 @@ class TestServoCalibrationArmingGate(unittest.TestCase):
         success = controller.execute_trajectory([])
         self.assertFalse(success)
 
-    def test_valid_calibration_arms_and_clamps_limits(self):
-        """ArmController loads calibration, arms, and clamps commands to per-joint bounds."""
+    def test_uncalibrated_or_example_file_refuses_to_arm(self):
+        """ArmController MUST refuse to arm when file has 'calibrated': false (like .example)."""
         mock_driver = MockServoDriver()
-        calib_file = os.path.join(REPO_ROOT, "config/servo_calibration.json")
+        example_file = os.path.join(REPO_ROOT, "config/servo_calibration.json.example")
         controller = ArmController(
             driver=mock_driver,
             force_mock=True,
-            calibration_path=calib_file,
+            calibration_path=example_file,
         )
-        self.assertTrue(controller.is_armed)
+        self.assertFalse(controller.is_armed)
 
-        # Wrist flex is calibrated to [15.0, 165.0]
-        # Command 180.0 -> must be clamped to 165.0
-        controller.move_to_angles({"joint_wrist_flex": 180.0}, duration_s=0.01)
-        clamped_angle = controller.get_joint_angles().get("joint_wrist_flex")
-        self.assertAlmostEqual(clamped_angle, 165.0, places=1)
+    def test_missing_timestamp_or_version_refuses_to_arm(self):
+        """ArmController MUST refuse to arm if timestamp or tool_version is missing."""
+        import tempfile
+        mock_driver = MockServoDriver()
 
-        # Command -10.0 -> must be clamped to 15.0
-        controller.move_to_angles({"joint_wrist_flex": -10.0}, duration_s=0.01)
-        clamped_angle = controller.get_joint_angles().get("joint_wrist_flex")
-        self.assertAlmostEqual(clamped_angle, 15.0, places=1)
+        # Missing timestamp
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "tool_version": "1.0.0",
+                "servos": {"joint_wrist_flex": {"min_deg": 15.0, "max_deg": 165.0, "home_deg": 90.0}}
+            }, f)
+            tmp_path = f.name
+        try:
+            ctrl = ArmController(driver=mock_driver, force_mock=True, calibration_path=tmp_path)
+            self.assertFalse(ctrl.is_armed)
+        finally:
+            os.remove(tmp_path)
+
+        # Missing tool_version
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "timestamp": time.time(),
+                "servos": {"joint_wrist_flex": {"min_deg": 15.0, "max_deg": 165.0, "home_deg": 90.0}}
+            }, f)
+            tmp_path = f.name
+        try:
+            ctrl = ArmController(driver=mock_driver, force_mock=True, calibration_path=tmp_path)
+            self.assertFalse(ctrl.is_armed)
+        finally:
+            os.remove(tmp_path)
+
+    def test_valid_calibration_arms_and_clamps_limits(self):
+        """ArmController loads valid calibration with calibrated: True, arms, and clamps commands."""
+        import tempfile
+        mock_driver = MockServoDriver()
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "timestamp": time.time(),
+                "tool_version": "1.0.0",
+                "servos": {
+                    "joint_wrist_flex": {"min_deg": 15.0, "max_deg": 165.0, "home_deg": 90.0}
+                }
+            }, f)
+            calib_file = f.name
+
+        try:
+            controller = ArmController(
+                driver=mock_driver,
+                force_mock=True,
+                calibration_path=calib_file,
+            )
+            self.assertTrue(controller.is_armed)
+
+            # Wrist flex is calibrated to [15.0, 165.0]
+            # Command 180.0 -> must be clamped to 165.0
+            controller.move_to_angles({"joint_wrist_flex": 180.0}, duration_s=0.01)
+            clamped_angle = controller.get_joint_angles().get("joint_wrist_flex")
+            self.assertAlmostEqual(clamped_angle, 165.0, places=1)
+
+            # Command -10.0 -> must be clamped to 15.0
+            controller.move_to_angles({"joint_wrist_flex": -10.0}, duration_s=0.01)
+            clamped_angle = controller.get_joint_angles().get("joint_wrist_flex")
+            self.assertAlmostEqual(clamped_angle, 15.0, places=1)
+        finally:
+            os.remove(calib_file)
+
+    def test_emg_decoder_refuses_uncalibrated_example(self):
+        """EMGDecoder refuses to load calibration if calibrated is False or missing."""
+        decoder = EMGDecoder()
+        example_file = os.path.join(REPO_ROOT, "config/emg_calibration.json.example")
+        self.assertFalse(decoder.load_calibration(example_file))
+
+    def test_calibration_clis_set_required_metadata(self):
+        """Only calibration CLIs set 'calibrated': True, timestamp, and tool_version."""
+        import tempfile
+        from tools.calibrate_servos import save_calibration as save_servo_cal
+        from tools.emg_training.calibrate_emg_mvc import run_guided_calibration
+
+        # Test servo calibration CLI saver
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            tmp_servo = f.name
+        try:
+            save_servo_cal({"servos": {}}, tmp_servo)
+            with open(tmp_servo) as f:
+                d = json.load(f)
+            self.assertTrue(d.get("calibrated"))
+            self.assertTrue(bool(d.get("timestamp")))
+            self.assertEqual(d.get("tool_version"), "1.0.0")
+        finally:
+            if os.path.exists(tmp_servo):
+                os.remove(tmp_servo)
+
+        # Test EMG calibration CLI saver
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            tmp_emg = f.name
+        try:
+            run_guided_calibration("TEST_SUBJ", tmp_emg, force_mock=True, fast=True)
+            with open(tmp_emg) as f:
+                d = json.load(f)
+            self.assertTrue(d.get("calibrated"))
+            self.assertTrue(bool(d.get("timestamp")))
+            self.assertEqual(d.get("tool_version"), "1.0.0")
+        finally:
+            if os.path.exists(tmp_emg):
+                os.remove(tmp_emg)
 
 
 class TestVisionGripLink(unittest.TestCase):

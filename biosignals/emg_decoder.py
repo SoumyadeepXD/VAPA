@@ -145,6 +145,18 @@ class EMGDecoder:
         try:
             with open(config_path, "r") as f:
                 data = json.load(f)
+            if data.get("calibrated") is not True:
+                logger.warning(
+                    f"EMG calibration file '{config_path}' is NOT calibrated ('calibrated': false or missing). "
+                    f"Refusing unmeasured calibration. Run tools/emg_training/calibrate_emg_mvc.py first."
+                )
+                return False
+            if not data.get("timestamp") and not data.get("calibration_timestamp"):
+                logger.warning(f"EMG calibration file '{config_path}' is missing timestamp! Refusing to load.")
+                return False
+            if not data.get("tool_version"):
+                logger.warning(f"EMG calibration file '{config_path}' is missing tool_version! Refusing to load.")
+                return False
             if "channels" in data:
                 ch_data = data["channels"]
                 if "flexor" in ch_data and self.num_channels > 0:

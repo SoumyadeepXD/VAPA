@@ -66,6 +66,9 @@ def load_existing_calibration(path: str) -> dict:
 
 
 def save_calibration(data: dict, path: str):
+    data["calibrated"] = True
+    data["timestamp"] = time.time()
+    data["tool_version"] = "1.0.0"
     data["calibration_date"] = time.strftime("%Y-%m-%d")
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w") as f:

@@ -113,6 +113,20 @@ class ArmController:
         try:
             with open(path, "r") as f:
                 data = json.load(f)
+
+            if data.get("calibrated") is not True:
+                logger.critical(
+                    f"Servo calibration file '{path}' is NOT calibrated ('calibrated': false or missing)! "
+                    f"Arming refused. Run tools/calibrate_servos.py on physical hardware to calibrate."
+                )
+                return False
+            if not data.get("timestamp"):
+                logger.critical(f"Servo calibration file '{path}' is missing timestamp! Arming refused.")
+                return False
+            if not data.get("tool_version"):
+                logger.critical(f"Servo calibration file '{path}' is missing tool_version! Arming refused.")
+                return False
+
             servos = data.get("servos", {})
             if not servos:
                 logger.critical(f"Servo calibration file '{path}' has no servos configured! Refusing to arm.")
