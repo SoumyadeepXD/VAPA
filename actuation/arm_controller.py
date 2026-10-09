@@ -444,15 +444,11 @@ class ArmController:
                     except Exception:
                         pass
 
-                # Safety check: excessive force fraction or emergency limit
-                if measured_tactile is not None:
-                    if (
-                        measured_tactile >= FORCE_EMERGENCY_LIMIT_N
-                        or (0.0 < measured_tactile <= 1.0 and measured_tactile >= self.fsr_force_ceiling_fraction)
-                    ):
-                        logger.warning(f"Excessive force detected ({measured_tactile:.2f})! Aborting grasp.")
-                        self.emergency_stop()
-                        return False
+                # Safety check: excessive force emergency limit in Newtons
+                if measured_tactile is not None and measured_tactile >= FORCE_EMERGENCY_LIMIT_N:
+                    logger.warning(f"Excessive force detected ({measured_tactile:.2f}N >= {FORCE_EMERGENCY_LIMIT_N:.2f}N limit)! Aborting grasp.")
+                    self.emergency_stop()
+                    return False
 
                 # Check if physical FSR target force reached
                 if measured_tactile is not None and measured_tactile >= target_force_n:

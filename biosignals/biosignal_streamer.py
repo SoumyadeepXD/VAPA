@@ -43,6 +43,8 @@ class SyntheticBiosignalStreamer:
         self.inject_eeg_cycle = False
 
         self.phase = 0.0
+        self.emg_phase = 0.0
+        self.eeg_phase = 0.0
         logger.info("SyntheticBiosignalStreamer initialized.")
 
     def trigger_gesture(self, gesture_name: str, duration_s: float = 1.0):
@@ -79,32 +81,36 @@ class SyntheticBiosignalStreamer:
             logger.info(f"Triggered synthetic gesture: {gesture_name} for {duration_s}s")
 
     def read_chunk(self, num_samples: int = 20):
-        t_arr = np.linspace(self.phase, self.phase + num_samples / EMG_SAMPLING_RATE_HZ, num_samples)
-        self.phase += num_samples / EMG_SAMPLING_RATE_HZ
+        t_emg = np.linspace(self.emg_phase, self.emg_phase + num_samples / EMG_SAMPLING_RATE_HZ, num_samples, endpoint=False)
+        self.emg_phase += num_samples / EMG_SAMPLING_RATE_HZ
+        self.phase = self.emg_phase
 
         # Base EMG (Raw microvolts: White noise + 50Hz hum + baseline muscle tone)
         emg_data = np.random.normal(0, 3.0, (self.num_emg, num_samples))
-        emg_data += 2.0 * np.sin(2 * np.pi * 50.0 * t_arr)
+        emg_data += 2.0 * np.sin(2 * np.pi * 50.0 * t_emg)
 
         if self.inject_emg_estop:
             burst = np.random.normal(0, 150.0, num_samples)
             emg_data[0] += burst
             emg_data[1] += burst
         elif self.inject_emg_grasp:
-            burst = np.random.normal(0, 120.0, num_samples) * (1.0 + 0.5 * np.sin(2 * np.pi * 150 * t_arr))
+            burst = np.random.normal(0, 120.0, num_samples) * (1.0 + 0.5 * np.sin(2 * np.pi * 150 * t_emg))
             emg_data[0] += burst
         elif self.inject_emg_open:
-            burst = np.random.normal(0, 110.0, num_samples) * (1.0 + 0.5 * np.sin(2 * np.pi * 180 * t_arr))
+            burst = np.random.normal(0, 110.0, num_samples) * (1.0 + 0.5 * np.sin(2 * np.pi * 180 * t_emg))
             emg_data[1] += burst
+
+        t_eeg = np.linspace(self.eeg_phase, self.eeg_phase + num_samples / EEG_SAMPLING_RATE_HZ, num_samples, endpoint=False)
+        self.eeg_phase += num_samples / EEG_SAMPLING_RATE_HZ
 
         # Base EEG
         eeg_data = np.random.normal(0, 4.0, (self.num_eeg, num_samples))
         if not self.inject_eeg_reach:
-            eeg_data[0] += 25.0 * np.sin(2 * np.pi * 10.0 * t_arr)
-            eeg_data[2] += 20.0 * np.sin(2 * np.pi * 10.0 * t_arr)
+            eeg_data[0] += 25.0 * np.sin(2 * np.pi * 10.0 * t_eeg)
+            eeg_data[2] += 20.0 * np.sin(2 * np.pi * 10.0 * t_eeg)
         else:
-            eeg_data[0] += 4.0 * np.sin(2 * np.pi * 10.0 * t_arr)
-            eeg_data[0] += 18.0 * np.sin(2 * np.pi * 22.0 * t_arr)
+            eeg_data[0] += 4.0 * np.sin(2 * np.pi * 10.0 * t_eeg)
+            eeg_data[0] += 18.0 * np.sin(2 * np.pi * 22.0 * t_eeg)
 
         if self.inject_eeg_cycle:
             eeg_data[3] += 80.0

@@ -471,3 +471,21 @@ class VAPAEngine:
     def reset_estop(self):
         self.arm.reset_emergency_stop()
         self.state_machine.reset_from_estop()
+        if hasattr(self, "emg_decoder") and hasattr(self.emg_decoder, "reset"):
+            self.emg_decoder.reset()
+        if hasattr(self, "fusion") and self.fusion is not None:
+            self.fusion.reset()
+        if hasattr(self, "streamer") and self.streamer is not None:
+            if hasattr(self.streamer, "synthetic_streamer"):
+                self.streamer.synthetic_streamer.inject_emg_estop = False
+            if hasattr(self.streamer, "esp32_receiver") and self.streamer.esp32_receiver is not None:
+                with self.streamer.esp32_receiver.lock:
+                    self.streamer.esp32_receiver._mock_override_scenario = None
+                    self.streamer.esp32_receiver._mock_override_until = 0.0
+                    self.streamer.esp32_receiver._mock_scenario = "rest"
+        with self.lock:
+            self.latest_multimodal_cmd = MultimodalCommand(
+                action=MultimodalCommand.NO_OP,
+                confidence=1.0,
+                target=None,
+            )

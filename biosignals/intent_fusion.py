@@ -65,6 +65,13 @@ class IntentFusionEngine:
         self.current_state = "IDLE"
         self.grip_manager = GripProfileManager()
 
+    def reset(self):
+        """Resets target selection and locking state."""
+        self.selected_target_index = 0
+        self.is_target_locked = False
+        self.current_state = "IDLE"
+        self.grip_manager.on_grasp_released()
+
     def fuse(
         self,
         emg_intent: EMGIntent,
@@ -143,7 +150,8 @@ class IntentFusionEngine:
             # EEG Motor Imagery or EMG Contraction initiates reach to selected target
             if active_target and (
                 eeg_intent.command in (EEGIntent.TARGET_LOCK_CONFIRM, EEGIntent.INTENT_REACH)
-                or emg_intent.activation_level > 0.40
+                or (eeg_intent.motor_imagery_active and eeg_intent.beta_power > 0.15)
+                or (emg_intent.gesture in (EMGIntent.GRASP_CLOSE, EMGIntent.PINCH) and emg_intent.activation_level > 0.40)
             ):
                 self.is_target_locked = True
                 return MultimodalCommand(

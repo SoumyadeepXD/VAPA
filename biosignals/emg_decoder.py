@@ -156,6 +156,19 @@ class EMGDecoder:
         self.fault_reason = ""
         self._manual_lead_off_channels.clear()
 
+    def reset(self):
+        """Resets dynamic tracking state, activation smoothing, and debounce counters."""
+        self.smoothed_activations = np.zeros(self.num_channels, dtype=np.float32)
+        self.co_contraction_counter = 0
+        self.current_gesture = EMGIntent.REST
+        self.gesture_hold_count = 0
+        self.lead_off_flag = False
+        self.fault_reason = ""
+        self._manual_lead_off_channels.clear()
+        for b in self.buffers:
+            b.clear()
+            b.extend([0.0] * self.buffer_len)
+
     def load_calibration(self, config_path: str = "config/emg_calibration.json") -> bool:
         """Loads two-site baseline and MVC from config/emg_calibration.json if available."""
         if not os.path.exists(config_path):

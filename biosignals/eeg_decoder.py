@@ -74,7 +74,7 @@ class EEGDecoder:
         self.filter.add_bandpass_filter("bandpass", low_hz=EEG_BANDPASS_LOW_HZ, high_hz=EEG_BANDPASS_HIGH_HZ)
 
         # Baseline resting Mu power (calibrated during rest)
-        self.baseline_mu_power = 0.35
+        self.baseline_mu_power = 0.98
         self.baseline_beta_power = 0.20
 
         # Ring buffers for 1.5 seconds of EEG signal
