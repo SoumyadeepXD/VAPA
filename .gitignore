@@ -5,3 +5,15 @@ __pycache__/
 .venv
 venv/
 
+# Untouched team backup
+incoming/
+
+# Large raw EMG datasets and binary model pickles (verified via data/emg/MANIFEST.csv)
+data/emg/raw/*.csv
+!data/emg/raw/*_sample.csv
+biosignals/models/*.pkl
+
+# Generated calibration files (Must be measured on physical hardware via CLI)
+config/*.json
+!config/*.example
+

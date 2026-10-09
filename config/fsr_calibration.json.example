@@ -1,0 +1,50 @@
+{
+  "calibrated": false,
+  "timestamp": null,
+  "tool_version": null,
+  "known_weight_grams": 500.0,
+  "force_ceiling_fraction": 0.85,
+  "note": "Unmeasured placeholder calibration. Run tools/calibrate_fsr.py to measure physical FSR sensor baselines and load ranges.",
+  "sensors": {
+    "finger_thumb": {
+      "channel": 0,
+      "tare_volts": 0.05,
+      "loaded_volts": 2.80,
+      "dynamic_range_volts": 2.75,
+      "ceiling_fraction": 0.85,
+      "ceiling_volts": 2.3875
+    },
+    "finger_index": {
+      "channel": 1,
+      "tare_volts": 0.05,
+      "loaded_volts": 2.80,
+      "dynamic_range_volts": 2.75,
+      "ceiling_fraction": 0.85,
+      "ceiling_volts": 2.3875
+    },
+    "finger_middle": {
+      "channel": 2,
+      "tare_volts": 0.05,
+      "loaded_volts": 2.80,
+      "dynamic_range_volts": 2.75,
+      "ceiling_fraction": 0.85,
+      "ceiling_volts": 2.3875
+    },
+    "finger_ring": {
+      "channel": 3,
+      "tare_volts": 0.05,
+      "loaded_volts": 2.80,
+      "dynamic_range_volts": 2.75,
+      "ceiling_fraction": 0.85,
+      "ceiling_volts": 2.3875
+    },
+    "finger_pinky": {
+      "channel": 4,
+      "tare_volts": 0.05,
+      "loaded_volts": 2.80,
+      "dynamic_range_volts": 2.75,
+      "ceiling_fraction": 0.85,
+      "ceiling_volts": 2.3875
+    }
+  }
+}

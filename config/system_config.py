@@ -104,11 +104,21 @@ EEG_NOTCH_HZ = 50.0
 EEG_MU_RHYTHM_BAND = (8.0, 12.0)   # Mu rhythm (sensorimotor desynchronization during motor imagery)
 EEG_BETA_RHYTHM_BAND = (13.0, 30.0) # Beta rhythm (motor planning & active state)
 
+# EMG Architecture & Decoder Selection
+# Options: "threshold" (Baseline envelope dual-threshold decoder) or "classifier" (Machine learning classifier)
+EMG_DECODER = "threshold"  # Default: "threshold" (Production verified baseline)
+EMG_CLASSIFIER_CONFIDENCE_THRESHOLD = 0.70  # Minimum model probability to accept gesture
+EMG_CLASSIFIER_MAJORITY_VOTING_N = 3        # Number of consecutive windows required for gesture shift
+EMG_CLASSIFIER_WINDOW_MS = 200.0            # Max window duration in ms (<= 250ms for reactive control)
+
 # EMG Intent Thresholds (Normalized 0.0 to 1.0)
 EMG_REST_THRESHOLD = 0.12        # Below this is considered relaxed/rest
 EMG_ACTIVATION_THRESHOLD = 0.28  # Muscle contraction detected
 EMG_HIGH_CONTRACTION_THRESHOLD = 0.65 # Strong muscle contraction
 EMG_CO_CONTRACTION_THRESHOLD = 0.85   # Simultaneous multi-muscle peak -> Emergency Stop / Abort
+EMG_CO_CONTRACTION_DEBOUNCE_WINDOWS = 2 # Debounce count (2 frames = 20ms at 100Hz; total end-to-end trip time 30-80ms)
+EMG_CROSSTALK_TOLERANCE_FRACTION = 0.30 # Antagonist crosstalk fraction tolerated without false E-Stop (default 30%)
+
 
 # EEG Intent Thresholds
 EEG_MOTOR_IMAGERY_ERD_THRESHOLD = 0.35  # Relative power drop in Mu band (35% desynchronization = reach trigger)

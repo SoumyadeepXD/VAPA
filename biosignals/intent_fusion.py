@@ -9,6 +9,7 @@ import logging
 from biosignals.emg_decoder import EMGIntent
 from biosignals.eeg_decoder import EEGIntent
 from vision.spatial_3d import GraspTarget3D
+from vision.grip_profiles import GripProfileManager
 
 logger = logging.getLogger("VAPA.Biosignals.Fusion")
 
@@ -34,6 +35,8 @@ class MultimodalCommand:
         gripper_opening_ratio: float = 1.0,
         confidence: float = 1.0,
         source: str = "FUSION",
+        force_ceiling_n: float = 7.0,
+        grasp_type: str = "POWER",
     ):
         self.action = action
         self.target = target
@@ -41,22 +44,33 @@ class MultimodalCommand:
         self.gripper_opening_ratio = float(gripper_opening_ratio)
         self.confidence = float(confidence)
         self.source = source
+        self.force_ceiling_n = float(force_ceiling_n)
+        self.grasp_type = str(grasp_type)
         self.timestamp = time.time()
 
     def __repr__(self):
         target_name = self.target.label if self.target else "None"
-        return f"MultimodalCommand(action='{self.action}', target='{target_name}', force={self.target_force_n:.1f}N, src='{self.source}')"
+        return f"MultimodalCommand(action='{self.action}', target='{target_name}', force={self.target_force_n:.1f}N, ceiling={self.force_ceiling_n:.1f}N, src='{self.source}')"
 
 
 class IntentFusionEngine:
     """
     Multimodal intent arbitrator.
     Prioritizes safety E-stop, then EMG muscle triggers, then EEG cognitive triggers.
+    Enforces that perception never starts motion, and binds grip profiles at closing start.
     """
     def __init__(self):
         self.selected_target_index = 0
         self.is_target_locked = False
         self.current_state = "IDLE"
+        self.grip_manager = GripProfileManager()
+
+    def reset(self):
+        """Resets target selection and locking state."""
+        self.selected_target_index = 0
+        self.is_target_locked = False
+        self.current_state = "IDLE"
+        self.grip_manager.on_grasp_released()
 
     def fuse(
         self,
@@ -64,6 +78,7 @@ class IntentFusionEngine:
         eeg_intent: EEGIntent,
         visible_targets: list[GraspTarget3D],
         system_state: str,
+        estop_hardware_trigger: bool = False,
     ) -> MultimodalCommand:
         """
         Fuses biosignals and vision into a unified action command.
@@ -71,7 +86,15 @@ class IntentFusionEngine:
         self.current_state = system_state
         num_targets = len(visible_targets)
 
-        # 1. HIGHEST PRIORITY: Emergency Stop Trigger (EMG Co-contraction)
+        # 1. HIGHEST PRIORITY: Emergency Stop Trigger (Hardware E-Stop Button or EMG Co-contraction)
+        if estop_hardware_trigger:
+            logger.critical("ESP32 Hardware E-Stop button pressed! Triggering EMERGENCY_STOP.")
+            return MultimodalCommand(
+                action=MultimodalCommand.EMERGENCY_STOP,
+                confidence=1.0,
+                source="ESP32_BUTTON_ESTOP",
+            )
+
         if emg_intent.gesture == EMGIntent.CO_CONTRACTION_ESTOP:
             logger.warning("EMG Co-contraction detected! Triggering EMERGENCY_STOP.")
             return MultimodalCommand(
@@ -91,7 +114,30 @@ class IntentFusionEngine:
 
         # --- A. SCANNING / IDLE STATE ---
         if system_state in ("IDLE", "SCANNING"):
-            # EEG Trigger to cycle between detected 3D objects
+            # Camera-off / Zero Targets Mode: Direct EMG Proportional Control
+            if num_targets == 0 or active_target is None:
+                if emg_intent.gesture in (EMGIntent.GRASP_CLOSE, EMGIntent.PINCH):
+                    profile = self.grip_manager.on_grasp_start(None)
+                    return MultimodalCommand(
+                        action=MultimodalCommand.START_GRASP,
+                        target=None,
+                        target_force_n=emg_intent.proportional_force_n,
+                        force_ceiling_n=profile.force_ceiling_n,
+                        grasp_type=profile.grasp_type,
+                        confidence=emg_intent.confidence,
+                        source="EMG_DIRECT_GRASP",
+                    )
+                elif emg_intent.gesture == EMGIntent.HAND_OPEN:
+                    self.grip_manager.on_grasp_released()
+                    return MultimodalCommand(
+                        action=MultimodalCommand.RELEASE_GRIP,
+                        confidence=emg_intent.confidence,
+                        source="EMG_DIRECT_RELEASE",
+                    )
+                # When camera is off and muscles relaxed, do nothing (NO_OP)
+                return MultimodalCommand(action=MultimodalCommand.NO_OP)
+
+            # Vision Targets Visible: EEG Trigger to cycle between detected 3D objects
             if eeg_intent.command == EEGIntent.TARGET_CYCLE_NEXT and num_targets > 1:
                 self.selected_target_index = (self.selected_target_index + 1) % num_targets
                 logger.info(f"Cycled target to #{self.selected_target_index+1}: {visible_targets[self.selected_target_index].label}")
@@ -101,10 +147,11 @@ class IntentFusionEngine:
                     source="EEG_CYCLE",
                 )
 
-            # EEG Motor Imagery or Attention -> Lock Target & Start Reach
+            # EEG Motor Imagery or EMG Contraction initiates reach to selected target
             if active_target and (
                 eeg_intent.command in (EEGIntent.TARGET_LOCK_CONFIRM, EEGIntent.INTENT_REACH)
-                or emg_intent.activation_level > 0.40
+                or (eeg_intent.motor_imagery_active and eeg_intent.beta_power > 0.15)
+                or (emg_intent.gesture in (EMGIntent.GRASP_CLOSE, EMGIntent.PINCH) and emg_intent.activation_level > 0.40)
             ):
                 self.is_target_locked = True
                 return MultimodalCommand(
@@ -119,6 +166,7 @@ class IntentFusionEngine:
         elif system_state == "REACHING":
             # EMG Release / Open intent during reach aborts and returns home
             if emg_intent.gesture == EMGIntent.HAND_OPEN and emg_intent.confidence > 0.7:
+                self.grip_manager.on_grasp_released()
                 return MultimodalCommand(
                     action=MultimodalCommand.RETURN_HOME,
                     source="EMG_ABORT",
@@ -126,17 +174,33 @@ class IntentFusionEngine:
 
         # --- C. AT TARGET / GRASPING STATE ---
         elif system_state in ("AT_TARGET", "GRASPING"):
-            # EMG Grasp Close intent initiates grip closure with proportional force
+            # Update mid-grasp ceiling if object class reclassified
+            if system_state == "GRASPING" and active_target:
+                self.grip_manager.update_mid_grasp(active_target.label, active_target.score)
+
+            # EMG Grasp Close intent initiates grip closure with bound grip profile
             if emg_intent.gesture in (EMGIntent.GRASP_CLOSE, EMGIntent.PINCH):
-                target_force = active_target.target_force_n if active_target else emg_intent.proportional_force_n
-                # Proportional force modulated by muscle activation
-                effective_force = max(target_force * 0.5, emg_intent.proportional_force_n)
+                target_label = active_target.label if active_target else None
+                target_conf = active_target.score if active_target else 1.0
+                profile = self.grip_manager.on_grasp_start(target_label, target_conf)
+
+                effective_force = max(profile.target_force_n * 0.5, emg_intent.proportional_force_n)
                 return MultimodalCommand(
                     action=MultimodalCommand.START_GRASP,
                     target=active_target,
                     target_force_n=effective_force,
+                    force_ceiling_n=self.grip_manager.current_force_ceiling_n,
+                    grasp_type=profile.grasp_type,
                     confidence=emg_intent.confidence,
                     source="EMG_GRASP",
+                )
+
+            elif emg_intent.gesture == EMGIntent.HAND_OPEN:
+                self.grip_manager.on_grasp_released()
+                return MultimodalCommand(
+                    action=MultimodalCommand.RELEASE_GRIP,
+                    confidence=emg_intent.confidence,
+                    source="EMG_RELEASE",
                 )
 
         # --- D. HOLDING STATE ---
@@ -146,10 +210,12 @@ class IntentFusionEngine:
                 return MultimodalCommand(
                     action=MultimodalCommand.MODULATE_FORCE,
                     target_force_n=emg_intent.proportional_force_n,
+                    force_ceiling_n=self.grip_manager.current_force_ceiling_n,
                     source="EMG_PROPORTIONAL_FORCE",
                 )
             # EMG Hand Open intent triggers object release
             elif emg_intent.gesture == EMGIntent.HAND_OPEN:
+                self.grip_manager.on_grasp_released()
                 return MultimodalCommand(
                     action=MultimodalCommand.RELEASE_GRIP,
                     source="EMG_RELEASE",

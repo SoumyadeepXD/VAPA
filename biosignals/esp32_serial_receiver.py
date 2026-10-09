@@ -1,10 +1,12 @@
 """
 VAPA Asynchronous ESP32 Serial Telemetry Receiver
 High-speed non-blocking UART receiver on NVIDIA Jetson Orin (auto-probes /dev/ttyTHS1, /dev/ttyTHS0, /dev/ttyUSB0, /dev/ttyACM0).
-Ingests, deserializes, and validates real-time 100 Hz JSON frames from ESP32 Node 2:
+Ingests, deserializes, and validates real-time 100 Hz binary / JSON frames from ESP32 Node 2:
 - 5x FSR 402 Tactile Sensors (Thumb, Index, Middle, Ring, Little)
-- MyoWare 2.0 EMG Muscle Signal (ADS1115 A0)
-- EEG Brainwave Analog Signal (ADS1115 A1)
+- Two-Site EMG: Flexor (ADS1115 #1 A0) & Extensor (ADS1115 #2 A2)
+- EEG Brainwave Analog Signal (ADS1115 #1 A1)
+- 12-bit AS5600 Magnetic Rotary Encoder Angle
+- Hardware Emergency Stop Button Sense & Jetson Heartbeat Guard
 """
 
 import os
@@ -24,6 +26,7 @@ from config.hardware_config import (
     BIOSIGNAL_SERIAL_PORT,
     BIOSIGNAL_BAUD_RATE,
     JETSON_UART_CANDIDATES,
+    JETSON_UART_BAUD_CANDIDATES,
     FSR_CHANNELS,
 )
 
@@ -35,16 +38,35 @@ logger = logging.getLogger("VAPA.Biosignals.ESP32Receiver")
 FSR_VOLTAGE_TO_FORCE_FACTOR = 3.5  # Newtons per Volt
 
 
+def compute_crc16(data: bytes | bytearray) -> int:
+    """Computes CRC-16-CCITT (False: poly 0x1021, init 0xFFFF)."""
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= (byte << 8)
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return crc
+
+
 class ESP32TelemetryFrame:
     """Represents a validated timestamped sensor packet from ESP32."""
     __slots__ = (
         "seq",
         "fsr_volts",
         "fsr_forces_n",
+        "emg_flex_volts",
+        "emg_ext_volts",
+        "emg_flex_activation",
+        "emg_ext_activation",
         "emg_volts",
         "emg_activation",
         "eeg_volts",
         "enc_deg",
+        "estop_button_pressed",
+        "oe_ok",
         "esp_timestamp_ms",
         "arrival_time",
         "is_valid",
@@ -54,9 +76,13 @@ class ESP32TelemetryFrame:
         self,
         seq: int = 0,
         fsr_volts: list[float] = None,
-        emg_volts: float = 0.0,
+        emg_volts: float = None,
+        emg_flex_volts: float = 0.0,
+        emg_ext_volts: float = 0.0,
         eeg_volts: float = 0.0,
         enc_deg: list[float] = None,
+        estop_button_pressed: bool = False,
+        oe_ok: bool = True,
         esp_timestamp_ms: int = 0,
         is_valid: bool = True,
     ):
@@ -65,11 +91,24 @@ class ESP32TelemetryFrame:
         self.fsr_volts = fsr_volts if (fsr_volts and len(fsr_volts) == 5) else [0.0, 0.0, 0.0, 0.0, 0.0]
         # Calculate contact force in Newtons
         self.fsr_forces_n = [float(max(0.0, v * FSR_VOLTAGE_TO_FORCE_FACTOR)) for v in self.fsr_volts]
-        self.emg_volts = float(emg_volts)
-        # Normalize EMG voltage (0.15V baseline to 2.5V full flex -> 0.0 to 1.0 activation)
-        self.emg_activation = float(np.clip((self.emg_volts - 0.15) / 2.2, 0.0, 1.0))
+        
+        # Two-channel EMG handling with backward compatibility
+        if emg_volts is not None and emg_flex_volts == 0.0:
+            self.emg_flex_volts = float(emg_volts)
+        else:
+            self.emg_flex_volts = float(emg_flex_volts)
+        self.emg_ext_volts = float(emg_ext_volts)
+        self.emg_volts = self.emg_flex_volts
+
+        # Proportional activation normalization (0.15V baseline to 2.35V peak -> 0.0 to 1.0 activation)
+        self.emg_flex_activation = float(np.clip((self.emg_flex_volts - 0.15) / 2.2, 0.0, 1.0))
+        self.emg_ext_activation = float(np.clip((self.emg_ext_volts - 0.15) / 2.2, 0.0, 1.0))
+        self.emg_activation = self.emg_flex_activation
+
         self.eeg_volts = float(eeg_volts)
         self.enc_deg = enc_deg or [0.0]
+        self.estop_button_pressed = bool(estop_button_pressed)
+        self.oe_ok = bool(oe_ok)
         self.esp_timestamp_ms = int(esp_timestamp_ms)
         self.arrival_time = time.time()
         self.is_valid = is_valid
@@ -95,14 +134,16 @@ class ESP32TelemetryFrame:
             fsr_str += f", Pi:{f[4]:.1f}"
         return (
             f"ESP32Frame(seq={self.seq}, FSR_N=[{fsr_str}], "
-            f"EMG_Act={self.emg_activation*100:.0f}%, EEG_V={self.eeg_volts:.2f}V, Enc={enc_val:.1f}°)"
+            f"Flex={self.emg_flex_activation*100:.0f}%, Ext={self.emg_ext_activation*100:.0f}%, "
+            f"EEG_V={self.eeg_volts:.2f}V, Enc={enc_val:.1f}°, EStop={self.estop_button_pressed})"
         )
 
 
 class AsyncESP32Receiver:
     """
     Non-blocking background thread that consumes serial telemetry from ESP32.
-    Auto-probes /dev/ttyTHS1, /dev/ttyTHS0, /dev/ttyUSB0, /dev/ttyACM0.
+    Supports both 33-byte CRC16 binary framing and 100 Hz JSON streaming.
+    Transmits 20 Hz Jetson heartbeat to keep ESP32 PCA9685 OE active.
     """
     def __init__(self, port: str = BIOSIGNAL_SERIAL_PORT, baud_rate: int = BIOSIGNAL_BAUD_RATE, force_mock: bool = False):
         self.port = port
@@ -120,8 +161,28 @@ class AsyncESP32Receiver:
         self.last_seq = -1
         self.is_connected = False
 
+        # Heartbeat & Framing
+        self._last_heartbeat_time = 0.0
+
+        # Mock Scenario Generator State
+        self._mock_scenario = "auto"
+        self._mock_override_scenario = None
+        self._mock_override_until = 0.0
+
         if not self.force_mock and SERIAL_AVAILABLE:
             self._connect()
+
+    def set_mock_scenario(self, scenario: str):
+        """Sets persistent mock scenario: 'rest', 'flexor', 'extensor', 'co_contraction', 'auto'."""
+        with self.lock:
+            self._mock_scenario = scenario
+
+    def trigger_synthetic_gesture(self, gesture_name: str, duration_s: float = 1.0):
+        """Injects a temporary mock scenario for duration_s seconds."""
+        with self.lock:
+            self._mock_override_scenario = gesture_name
+            self._mock_override_until = time.time() + duration_s
+        logger.info(f"Triggered synthetic gesture on ESP32 receiver: {gesture_name} for {duration_s:.1f}s")
 
     def _connect(self) -> bool:
         """Attempts to discover and open UART serial connection to ESP32."""
@@ -144,21 +205,28 @@ class AsyncESP32Receiver:
         except Exception:
             pass
 
+        baud_candidates = [self.baud_rate]
+        for b in JETSON_UART_BAUD_CANDIDATES:
+            if b not in baud_candidates:
+                baud_candidates.append(b)
+
         for port_candidate in candidate_ports:
             if not os.path.exists(port_candidate):
                 continue
 
-            try:
-                conn = serial.Serial(port_candidate, self.baud_rate, timeout=0.15)
-                conn.reset_input_buffer()
-                self.serial_conn = conn
-                self.port = port_candidate
-                self.is_connected = True
-                logger.info(f"[SUCCESS] Connected to ESP32 UART on {port_candidate} @ {self.baud_rate} Baud.")
-                return True
-            except Exception as e:
-                logger.debug(f"Port {port_candidate} could not be opened: {e}")
-                continue
+            for baud in baud_candidates:
+                try:
+                    conn = serial.Serial(port_candidate, baud, timeout=0.10)
+                    conn.reset_input_buffer()
+                    self.serial_conn = conn
+                    self.port = port_candidate
+                    self.baud_rate = baud
+                    self.is_connected = True
+                    logger.info(f"[SUCCESS] Connected to ESP32 UART on {port_candidate} @ {self.baud_rate} Baud.")
+                    return True
+                except Exception as e:
+                    logger.debug(f"Port {port_candidate} @ {baud} could not be opened: {e}")
+                    continue
 
         logger.warning(
             f"Could not open ESP32 on ports {candidate_ports}. "
@@ -187,9 +255,33 @@ class AsyncESP32Receiver:
                 pass
         logger.info("AsyncESP32Receiver stopped.")
 
+    def _record_frame(self, frame: ESP32TelemetryFrame):
+        if self.last_seq != -1 and frame.seq > (self.last_seq + 1):
+            dropped = frame.seq - (self.last_seq + 1)
+            self.dropped_count += dropped
+
+        self.last_seq = frame.seq
+        self.packet_count += 1
+        with self.lock:
+            self.latest_frame = frame
+
     def _worker_loop(self):
-        """Continuous background loop deserializing incoming lines at 100 Hz."""
+        """Continuous background loop deserializing incoming frames at 100 Hz."""
+        rx_buf = bytearray()
+
         while self.running:
+            now = time.time()
+
+            # 1. Jetson-to-ESP32 20 Hz Heartbeat Transmission
+            if self.is_connected and self.serial_conn and self.serial_conn.is_open:
+                if (now - self._last_heartbeat_time) >= 0.05:  # 20 Hz
+                    try:
+                        self.serial_conn.write(b'H')
+                        self._last_heartbeat_time = now
+                    except Exception:
+                        pass
+
+            # 2. Check Connection
             if not self.is_connected or self.serial_conn is None or not self.serial_conn.is_open:
                 if not self.force_mock and SERIAL_AVAILABLE:
                     time.sleep(2.0)
@@ -200,56 +292,124 @@ class AsyncESP32Receiver:
                     time.sleep(0.01)  # 100 Hz mock
                     continue
 
+            # 3. Read Incoming Bytes
             try:
-                line_bytes = self.serial_conn.readline()
-                if not line_bytes:
-                    continue
-
-                line_str = line_bytes.decode("utf-8", errors="ignore").strip()
-                if not (line_str.startswith("{") and line_str.endswith("}")):
-                    continue
-
-                # Parse JSON packet
-                data = json.loads(line_str)
-
-                seq = data.get("seq", 0)
-                fsr = data.get("fsr", [0.0, 0.0, 0.0, 0.0, 0.0])
-                emg = data.get("emg", 0.0)
-                eeg = data.get("eeg", 0.0)
-                enc = data.get("enc", [0.0])
-                ts  = data.get("ts", 0)
-
-                # Ensure fsr has 5 values
-                if len(fsr) < 5:
-                    fsr = fsr + [0.0] * (5 - len(fsr))
-                elif len(fsr) > 5:
-                    fsr = fsr[:5]
-
-                if self.last_seq != -1 and seq > (self.last_seq + 1):
-                    dropped = seq - (self.last_seq + 1)
-                    self.dropped_count += dropped
-
-                self.last_seq = seq
-                self.packet_count += 1
-
-                frame = ESP32TelemetryFrame(
-                    seq=seq,
-                    fsr_volts=fsr,
-                    emg_volts=emg,
-                    eeg_volts=eeg,
-                    enc_deg=enc,
-                    esp_timestamp_ms=ts,
-                    is_valid=True,
-                )
-
-                with self.lock:
-                    self.latest_frame = frame
-
-            except json.JSONDecodeError:
-                continue
+                in_waiting = self.serial_conn.in_waiting
+                if in_waiting > 0:
+                    chunk = self.serial_conn.read(in_waiting)
+                    if chunk:
+                        rx_buf.extend(chunk)
+                else:
+                    time.sleep(0.005)
             except Exception as e:
-                logger.error(f"Error reading ESP32 UART packet: {e}")
+                logger.error(f"Error reading ESP32 UART: {e}")
                 time.sleep(0.05)
+                continue
+
+            # 4. Parse Frames from Buffer
+            while len(rx_buf) > 0:
+                # Mode A: Compact Binary Frame (Header: 0xAA 0x55, Length: 33)
+                if rx_buf[0] == 0xAA:
+                    if len(rx_buf) < 2:
+                        break
+                    if rx_buf[1] == 0x55:
+                        if len(rx_buf) < 33:
+                            break  # Wait for full packet
+                        pkt = rx_buf[:33]
+                        expected_crc = (pkt[30] << 8) | pkt[31]
+                        actual_crc = compute_crc16(pkt[2:30])
+                        if actual_crc == expected_crc:
+                            seq = (pkt[3] << 24) | (pkt[4] << 16) | (pkt[5] << 8) | pkt[6]
+                            fsrs = [((pkt[7 + i*2] << 8) | pkt[8 + i*2]) / 1000.0 for i in range(5)]
+                            flex = ((pkt[17] << 8) | pkt[18]) / 1000.0
+                            ext = ((pkt[19] << 8) | pkt[20]) / 1000.0
+                            eeg = ((pkt[21] << 8) | pkt[22]) / 1000.0
+                            flags = pkt[25]
+                            estop = bool(flags & 0x01)
+                            oe_tripped = bool(flags & 0x02)
+                            oe_ok = (not oe_tripped) and (not estop)
+                            ts = (pkt[26] << 24) | (pkt[27] << 16) | (pkt[28] << 8) | pkt[29]
+
+                            frame = ESP32TelemetryFrame(
+                                seq=seq,
+                                fsr_volts=fsrs,
+                                emg_flex_volts=flex,
+                                emg_ext_volts=ext,
+                                eeg_volts=eeg,
+                                enc_deg=enc,
+                                estop_button_pressed=estop,
+                                oe_ok=oe_ok,
+                                esp_timestamp_ms=ts,
+                                is_valid=True,
+                            )
+                            self._record_frame(frame)
+                            del rx_buf[:33]
+                            continue
+                        else:
+                            # CRC Mismatch -> advance 1 byte to resync
+                            self.dropped_count += 1
+                            del rx_buf[:1]
+                            continue
+                    else:
+                        del rx_buf[:1]
+                        continue
+
+                # Mode B: High-Speed JSON Frame (Starts with '{', Ends with '\n')
+                elif rx_buf[0] == ord('{'):
+                    nl_pos = rx_buf.find(b'\n')
+                    if nl_pos == -1:
+                        if len(rx_buf) > 512:
+                            del rx_buf[:1]
+                        break
+                    line_bytes = rx_buf[:nl_pos+1]
+                    del rx_buf[:nl_pos+1]
+                    try:
+                        line_str = line_bytes.decode('utf-8', errors='ignore').strip()
+                        data = json.loads(line_str)
+                        seq = data.get("seq", 0)
+                        fsr = data.get("fsr", [0.0, 0.0, 0.0, 0.0, 0.0])
+                        if len(fsr) < 5:
+                            fsr = fsr + [0.0] * (5 - len(fsr))
+                        elif len(fsr) > 5:
+                            fsr = fsr[:5]
+                        emg_flex = data.get("emg_flex", data.get("emg", 0.0))
+                        emg_ext = data.get("emg_ext", 0.0)
+                        eeg = data.get("eeg", 0.0)
+                        enc = data.get("enc", [0.0])
+                        estop = bool(data.get("estop", 0))
+                        oe_ok = bool(data.get("oe_ok", not estop))
+                        ts = data.get("ts", 0)
+
+                        frame = ESP32TelemetryFrame(
+                            seq=seq,
+                            fsr_volts=fsr,
+                            emg_flex_volts=emg_flex,
+                            emg_ext_volts=emg_ext,
+                            eeg_volts=eeg,
+                            enc_deg=enc,
+                            estop_button_pressed=estop,
+                            oe_ok=oe_ok,
+                            esp_timestamp_ms=ts,
+                            is_valid=True,
+                        )
+                        self._record_frame(frame)
+                    except Exception:
+                        self.dropped_count += 1
+                    continue
+
+                else:
+                    # Seek next candidate header
+                    p_aa = rx_buf.find(b'\xaa')
+                    p_br = rx_buf.find(b'{')
+                    if p_aa != -1 and p_br != -1:
+                        del rx_buf[:min(p_aa, p_br)]
+                    elif p_aa != -1:
+                        del rx_buf[:p_aa]
+                    elif p_br != -1:
+                        del rx_buf[:p_br]
+                    else:
+                        rx_buf.clear()
+                    break
 
     def _generate_mock_frame(self):
         """Generates realistic synthetic telemetry when physical UART is disconnected."""
@@ -257,24 +417,68 @@ class AsyncESP32Receiver:
         self.packet_count += 1
         seq = self.packet_count
 
-        # Simulated baseline for 5x FSRs (Thumb, Index, Middle, Ring, Pinky)
-        sim_fsr = [
-            max(0.0, float(0.05 + 0.03 * np.sin(t * 2.0))),
-            max(0.0, float(0.04 + 0.03 * np.sin(t * 2.0 + 0.5))),
-            max(0.0, float(0.03 + 0.02 * np.sin(t * 2.0 + 1.0))),
-            max(0.0, float(0.02 + 0.02 * np.sin(t * 2.0 + 1.5))),
-            max(0.0, float(0.01 + 0.01 * np.sin(t * 2.0 + 2.0))),
-        ]
-        sim_emg = float(0.20 + 0.05 * np.sin(t * 0.8))
-        sim_eeg = float(0.35 + 0.10 * np.sin(t * 10.0 * 2 * np.pi))
-        sim_enc = [float((t * 20.0) % 360.0)]
+        with self.lock:
+            if t < self._mock_override_until and self._mock_override_scenario:
+                scenario = self._mock_override_scenario
+            else:
+                scenario = self._mock_scenario
+
+        # Default baselines
+        sim_fsr = [0.02, 0.02, 0.02, 0.02, 0.02]
+        sim_flex = 0.08 + 0.02 * np.sin(t * 1.5)
+        sim_ext  = 0.07 + 0.02 * np.cos(t * 1.5)
+        sim_eeg  = 0.35 + 0.10 * np.sin(t * 10.0 * 2 * np.pi)
+        sim_enc  = [float((t * 20.0) % 360.0)]
+        sim_estop = False
+
+        if scenario == "rest":
+            sim_flex = 0.08 + 0.01 * np.sin(t * 1.5)
+            sim_ext  = 0.07 + 0.01 * np.cos(t * 1.5)
+            sim_fsr  = [0.01, 0.01, 0.01, 0.01, 0.01]
+
+        elif scenario in ("flexor", "flex", "grasp", "fist"):
+            # High flexor activation (> 0.85), low extensor
+            sim_flex = float(2.15 + 0.05 * np.sin(t * 3.0))
+            sim_ext  = float(0.08 + 0.02 * np.cos(t * 1.5))
+            sim_fsr  = [0.65, 0.85, 0.70, 0.50, 0.30]
+
+        elif scenario in ("extensor", "ext", "open"):
+            # High extensor activation (> 0.85), low flexor
+            sim_flex = float(0.08 + 0.02 * np.cos(t * 1.5))
+            sim_ext  = float(2.15 + 0.05 * np.sin(t * 3.0))
+            sim_fsr  = [0.02, 0.02, 0.02, 0.02, 0.02]
+
+        elif scenario in ("co_contraction", "co_contract", "estop"):
+            # Simultaneous flexor > 0.85 and extensor > 0.85 -> triggers E-Stop!
+            sim_flex = float(2.20 + 0.05 * np.sin(t * 4.0))
+            sim_ext  = float(2.20 + 0.05 * np.cos(t * 4.0))
+
+        elif scenario == "estop_button":
+            sim_estop = True
+
+        elif scenario == "auto":
+            # Dynamic gentle sine wave
+            sim_fsr = [
+                max(0.0, float(0.05 + 0.03 * np.sin(t * 2.0))),
+                max(0.0, float(0.04 + 0.03 * np.sin(t * 2.0 + 0.5))),
+                max(0.0, float(0.03 + 0.02 * np.sin(t * 2.0 + 1.0))),
+                max(0.0, float(0.02 + 0.02 * np.sin(t * 2.0 + 1.5))),
+                max(0.0, float(0.01 + 0.01 * np.sin(t * 2.0 + 2.0))),
+            ]
+            sim_flex = float(0.20 + 0.05 * np.sin(t * 0.8))
+            sim_ext  = float(0.18 + 0.04 * np.cos(t * 0.8))
+
+        sim_oe_ok = not (scenario in ("co_contraction", "co_contract", "estop", "estop_button"))
 
         frame = ESP32TelemetryFrame(
             seq=seq,
             fsr_volts=sim_fsr,
-            emg_volts=sim_emg,
+            emg_flex_volts=sim_flex,
+            emg_ext_volts=sim_ext,
             eeg_volts=sim_eeg,
             enc_deg=sim_enc,
+            estop_button_pressed=sim_estop,
+            oe_ok=sim_oe_ok,
             esp_timestamp_ms=int(t * 1000) % 1000000,
             is_valid=True,
         )
@@ -294,3 +498,7 @@ class AsyncESP32Receiver:
                 "is_connected": self.is_connected,
                 "port": self.port,
             }
+
+
+# Canonical alias for telemetry receiver
+ESP32TelemetryReceiver = AsyncESP32Receiver

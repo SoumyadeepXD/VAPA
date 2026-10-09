@@ -36,6 +36,7 @@ def parse_arguments():
     parser.add_argument("--mock", action="store_true", help="Force full simulation mode (Mock camera, biosignals & servos)")
     parser.add_argument("--real", action="store_true", help="Force physical hardware mode on Jetson Orin")
     parser.add_argument("--headless", action="store_true", help="Run without graphical OpenCV window (terminal HUD only)")
+    parser.add_argument("--bench-no-failsafe", action="store_true", help="Override hardware safety failsafes for bench testing (prints loud warning every 10s)")
     return parser.parse_args()
 
 
@@ -78,7 +79,7 @@ def main():
     else:
         logger.info("Running in forced simulation mode (--mock).")
 
-    engine = VAPAEngine(force_mock=force_mock)
+    engine = VAPAEngine(force_mock=force_mock, bench_no_failsafe=args.bench_no_failsafe)
     engine.start()
 
     window_name = "VAPA - Visually Assisted Prosthetic Arm HUD [Press Q to Quit]"

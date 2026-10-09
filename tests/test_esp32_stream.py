@@ -55,7 +55,7 @@ def main():
                     f"FSR(N): [Th:{f[0]:4.1f} In:{f[1]:4.1f} Mi:{f[2]:4.1f} Ri:{f[3]:4.1f} Pi:{pi_f:4.1f}] "
                     f"Tot:{frame.total_grip_force_n:4.1f}N | "
                     f"Enc:{enc_deg:5.1f}° | "
-                    f"EMG_Act:{frame.emg_activation:4.2f} (V:{frame.emg_volts:.2f}V) | "
+                    f"Flex:{frame.emg_flex_activation:4.2f} Ext:{frame.emg_ext_activation:4.2f} | "
                     f"EEG_V:{frame.eeg_volts:.2f}V | "
                     f"Rx:{stats['packets_received']} Drop:{stats['packets_dropped']}"
                 )

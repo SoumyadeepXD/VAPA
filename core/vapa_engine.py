@@ -18,6 +18,10 @@ from config.system_config import (
     BIOSIGNAL_PROCESS_RATE_HZ,
     REACH_TIMEOUT_S,
     GRASP_TIMEOUT_S,
+    EMG_DECODER,
+    EMG_CLASSIFIER_CONFIDENCE_THRESHOLD,
+    EMG_CLASSIFIER_MAJORITY_VOTING_N,
+    EMG_CLASSIFIER_WINDOW_MS,
 )
 from vision.realsense_camera import RealSenseCamera
 from vision.object_detector import ObjectDetector
@@ -25,6 +29,7 @@ from vision.spatial_3d import Spatial3DAnalyzer, GraspTarget3D
 from vision.visualizer_3d import VisionVisualizer
 from biosignals.biosignal_streamer import BiosignalStreamer
 from biosignals.emg_decoder import EMGDecoder, EMGIntent
+from biosignals.emg_classifier import EMGClassifier
 from biosignals.eeg_decoder import EEGDecoder, EEGIntent
 from biosignals.intent_fusion import IntentFusionEngine, MultimodalCommand
 from kinematics.arm_model import ArmModel
@@ -41,8 +46,9 @@ logger = logging.getLogger("VAPA.Engine")
 
 class VAPAEngine:
     """Master multi-threaded control engine for Visually-Assisted Prosthetic Arm."""
-    def __init__(self, force_mock: bool = False):
+    def __init__(self, force_mock: bool = False, bench_no_failsafe: bool = False):
         self.force_mock = force_mock
+        self.bench_no_failsafe = bench_no_failsafe
         self.running = False
         self.lock = threading.Lock()
 
@@ -59,7 +65,16 @@ class VAPAEngine:
 
         # 2. Biosignal & Tactile Subsystem (ESP32 UART Telemetry)
         self.streamer = BiosignalStreamer(force_mock=force_mock)
-        self.emg_decoder = EMGDecoder()
+        if EMG_DECODER == "classifier":
+            logger.info("Initializing EMGClassifier (Safe ML architecture with fail-closed fallback)...")
+            self.emg_decoder = EMGClassifier(
+                confidence_threshold=EMG_CLASSIFIER_CONFIDENCE_THRESHOLD,
+                majority_vote_window=EMG_CLASSIFIER_MAJORITY_VOTING_N,
+                window_duration_ms=EMG_CLASSIFIER_WINDOW_MS,
+            )
+        else:
+            logger.info("Initializing baseline EMGDecoder (Dual-threshold envelope architecture)...")
+            self.emg_decoder = EMGDecoder()
         self.eeg_decoder = EEGDecoder()
         self.fusion = IntentFusionEngine()
 
@@ -68,7 +83,11 @@ class VAPAEngine:
         self.fk = ForwardKinematics(self.arm_model)
         self.ik = InverseKinematics(self.arm_model)
         self.planner = TrajectoryPlanner()
-        self.arm = ArmController(force_mock=force_mock)
+        self.arm = ArmController(
+            force_mock=force_mock,
+            bench_no_failsafe=bench_no_failsafe,
+            telemetry_provider=self.streamer.get_latest_telemetry,
+        )
         self.encoders = AS5600EncoderMux(force_mock=force_mock)
 
         # 4. State Machine
@@ -177,6 +196,8 @@ class VAPAEngine:
             # Read biosignal chunk from ESP32 UART
             emg_chunk, eeg_chunk = self.streamer.read_chunk(num_samples=10)
             fsr_forces = self.streamer.get_fsr_forces()
+            telemetry = self.streamer.get_latest_telemetry()
+            hw_estop = getattr(telemetry, "estop_button_pressed", False)
 
             emg_intent = self.emg_decoder.update_samples(emg_chunk)
             eeg_intent = self.eeg_decoder.update_samples(eeg_chunk)
@@ -185,10 +206,10 @@ class VAPAEngine:
                 targets_copy = list(self.visible_targets)
                 cur_state = self.state_machine.current_state
 
-            cmd = self.fusion.fuse(emg_intent, eeg_intent, targets_copy, cur_state)
+            cmd = self.fusion.fuse(emg_intent, eeg_intent, targets_copy, cur_state, estop_hardware_trigger=hw_estop)
 
-            # High-priority instant emergency stop directly from biosignals thread
-            if cmd.action == MultimodalCommand.EMERGENCY_STOP:
+            # High-priority instant emergency stop directly from biosignals thread or hardware button
+            if cmd.action == MultimodalCommand.EMERGENCY_STOP or hw_estop:
                 self.state_machine.transition_to(VAPAState.EMERGENCY_STOP)
                 self.arm.emergency_stop()
 
@@ -450,3 +471,21 @@ class VAPAEngine:
     def reset_estop(self):
         self.arm.reset_emergency_stop()
         self.state_machine.reset_from_estop()
+        if hasattr(self, "emg_decoder") and hasattr(self.emg_decoder, "reset"):
+            self.emg_decoder.reset()
+        if hasattr(self, "fusion") and self.fusion is not None:
+            self.fusion.reset()
+        if hasattr(self, "streamer") and self.streamer is not None:
+            if hasattr(self.streamer, "synthetic_streamer"):
+                self.streamer.synthetic_streamer.inject_emg_estop = False
+            if hasattr(self.streamer, "esp32_receiver") and self.streamer.esp32_receiver is not None:
+                with self.streamer.esp32_receiver.lock:
+                    self.streamer.esp32_receiver._mock_override_scenario = None
+                    self.streamer.esp32_receiver._mock_override_until = 0.0
+                    self.streamer.esp32_receiver._mock_scenario = "rest"
+        with self.lock:
+            self.latest_multimodal_cmd = MultimodalCommand(
+                action=MultimodalCommand.NO_OP,
+                confidence=1.0,
+                target=None,
+            )

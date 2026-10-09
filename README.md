@@ -371,11 +371,11 @@ VAPA/
 │   ├── test_phase2_neural_reach.py # Phase 2: Neural Decoding, Cognitive Selection & Reach Planning
 │   ├── test_phase3_grasp_force.py # Phase 3: EMG Muscle Grasp & Closed-Loop Force Regulation
 │   ├── test_phase4_release_retract.py # Phase 4: Object Holding, Extensor Release & Retraction to Home
-│   ├── test_phase5_e2e_mission.py # Phase 5: Autonomous End-to-End Mission & System Certification
-│   ├── test_phase6_stress_certification.py # Phase 6: Multi-Cycle Durability, Stress & Fleet Flight Certification
+│   ├── test_phase5_e2e_mission.py # Phase 5: Autonomous End-to-End Mission & Simulation Test Suite
+│   ├── test_phase6_stress_simulation.py # Phase 6: Multi-Cycle Durability, Stress & Simulation Test Suite
 │   ├── test_phase7_hand_pipeline.py # Phase 7: Robotic Hand Kinematics, InMoov URDF & Optical Grasping
 │   ├── test_phase8_flight_qualification.py # Phase 8: Hardware-in-the-Loop Flight Qualification & Telemetry
-│   ├── test_phase9_production_fleet.py # Phase 9: Full Fleet Production Readiness & Clinical Certification
+│   ├── test_phase9_production_fleet.py # Phase 9: Full Fleet Production Readiness & Simulation Test Suite
 │   ├── test_unit_suite.py        # Automated unit test suite (18 comprehensive tests)
 │   ├── test_realsense.py         # Camera & 3D deprojection test
 │   ├── test_biosignals.py        # EMG/EEG real-time DSP test

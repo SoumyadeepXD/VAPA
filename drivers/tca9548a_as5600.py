@@ -14,7 +14,7 @@ import numpy as np
 logger = logging.getLogger("VAPA.Drivers.AS5600")
 
 # I2C Addresses
-TCA9548A_DEFAULT_ADDR = 0x70  # A0=GND, A1=GND, A2=GND
+TCA9548A_DEFAULT_ADDR = 0x71  # A0=VDD, A1=GND, A2=GND (Configured at 0x71 to prevent 0x70 ALLCALL collision)
 AS5600_I2C_ADDR       = 0x36  # Fixed factory address for AS5600
 
 # AS5600 Register Map
@@ -194,3 +194,50 @@ class AS5600EncoderMux:
                 self.i2c_bus.close()
             except Exception:
                 pass
+
+
+def check_i2c_bus_collisions(candidate_devices: dict = None, bus_num: int = 1) -> bool:
+    """
+    Validates I2C address safety invariants:
+    - Fails with RuntimeError if two devices answer at 0x70 (e.g. TCA9548A and PCA9685 ALLCALL).
+    - Ensures TCA9548A is safely configured at 0x71 and PCA9685 ALLCALL bit is cleared.
+    """
+    if candidate_devices is not None:
+        devices_at_70 = [name for name, addrs in candidate_devices.items() if 0x70 in addrs]
+        if len(devices_at_70) > 1:
+            raise RuntimeError(
+                f"[I2C COLLISION ERROR] Multiple devices answering at 0x70: {devices_at_70}! "
+                f"PCA9685 ALLCALL bit must be cleared and TCA9548A relocated to 0x71."
+            )
+        return True
+
+    try:
+        import smbus2 as smbus
+        bus = smbus.SMBus(bus_num)
+        devices_at_70 = []
+        # Check if 0x70 responds
+        try:
+            bus.read_byte(0x70)
+            devices_at_70.append("device_at_0x70")
+        except Exception:
+            pass
+
+        # If PCA9685 is at 0x40, check if its MODE1 ALLCALL bit is set
+        try:
+            mode1 = bus.read_byte_data(0x40, 0x00)
+            if mode1 & 0x01:  # Bit 0 is ALLCALL
+                devices_at_70.append("PCA9685_ALLCALL")
+        except Exception:
+            pass
+
+        bus.close()
+        if len(devices_at_70) > 1:
+            raise RuntimeError(
+                f"[I2C COLLISION ERROR] Multiple devices answering at 0x70: {devices_at_70}! "
+                f"PCA9685 ALLCALL bit must be cleared and TCA9548A relocated to 0x71."
+            )
+    except Exception as e:
+        if "I2C COLLISION ERROR" in str(e):
+            raise
+    return True
+

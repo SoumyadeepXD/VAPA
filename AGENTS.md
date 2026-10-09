@@ -52,7 +52,7 @@
 | **CH 9–15**| *Reserved* | — | — | — | Future Expansion |
 
 ### 2.4 TCA9548A I2C Multiplexer & 4x AS5600 Encoders
-* **Address**: `0x70` on Jetson I2C bus 1 (`/dev/i2c-1`).
+* **Address**: `0x71` on Jetson I2C bus 1 (`/dev/i2c-1`) (A0=VDD to eliminate PCA9685 0x70 ALLCALL collision).
 * **Encoder Address**: `0x36` on each multiplexed sub-channel.
   * MUX CH 0: Finger Group Angle (12-bit, 0–4095 ticks, 0.088°/LSB).
   * MUX CH 1: Wrist Flexion Angle.
@@ -60,11 +60,19 @@
   * MUX CH 3: Forearm Rotation Angle.
 
 ### 2.5 ESP32 Node 2 & Analog Sensor Conditioning
-* **ADS1115 #1 (`0x48`)**: 4x FSR 402 force sensors (Thumb, Index, Middle, Ring) with $10\text{ k}\Omega$ pull-down voltage dividers and $100\text{ nF}$ anti-aliasing filter caps ($f_c \approx 159\text{ Hz}$).
-* **ADS1115 #2 (`0x49`)**: MyoWare 2.0 EMG sensor (Ch A0) and Analog EEG brainwave sensor module (Ch A1).
-* **Telemetry JSON Format (100 Hz Serial2)**:
+* **5x FSR Sensors**: Connected directly to ESP32 internal ADC1 pins (GPIO 32: Thumb, GPIO 33: Index, GPIO 34: Middle, GPIO 35: Ring, GPIO 36: Pinky) with $10\text{ k}\Omega$ pull-down voltage dividers and $100\text{ nF}$ anti-aliasing filter caps ($f_c \approx 159\text{ Hz}$).
+* **Dual ADS1115 I2C ADCs (16-bit @ 860 SPS)**:
+  * **ADS1115 #1 (`0x48`)**:
+    * Channel A0: Flexor EMG (`emg_flex`, MyoWare 2.0 ENV output)
+    * Channel A1: Analog EEG brainwave sensor module (`eeg`)
+  * **ADS1115 #2 (`0x49`)**:
+    * Channel A2: Extensor EMG (`emg_ext`, MyoWare 2.0 ENV output)
+* **Hardware Safety & E-Stop Pins**:
+  * GPIO 27: Momentary hardware emergency stop button to GND (active-low, internal pullup)
+  * GPIO 25: PCA9685 Output Enable (`/OE`) line (active-low enable; driven HIGH to cut servo PWM)
+* **Telemetry Streaming (100 Hz Serial2 @ 460800 Baud)**:
   ```json
-  {"seq":1425,"fsr":[0.420,0.850,0.120,0.050,0.000],"emg":0.940,"eeg":0.315,"ts":482910}
+  {"seq":1425,"fsr":[0.420,0.850,0.120,0.050,0.000],"emg_flex":0.940,"emg_ext":0.120,"emg":0.940,"eeg":0.315,"enc":[125.4],"estop":0,"oe_ok":1,"ts":482910}
   ```
 
 ---
@@ -170,11 +178,11 @@ VAPA/
     ├── test_phase2_neural_reach.py # Phase 2: Neural Decoding, Cognitive Selection & Reach Planning
     ├── test_phase3_grasp_force.py # Phase 3: EMG Muscle Grasp & Closed-Loop Force Regulation
     ├── test_phase4_release_retract.py # Phase 4: Object Holding, Extensor Release & Retraction to Home
-    ├── test_phase5_e2e_mission.py # Phase 5: Autonomous End-to-End Mission & System Certification
-    ├── test_phase6_stress_certification.py # Phase 6: Multi-Cycle Durability, Stress & Fleet Flight Certification
+    ├── test_phase5_e2e_mission.py # Phase 5: Autonomous End-to-End Mission & Simulation Test Suite
+    ├── test_phase6_stress_simulation.py # Phase 6: Multi-Cycle Durability, Stress & Simulation Test Suite
     ├── test_phase7_hand_pipeline.py # Phase 7: Robotic Hand Kinematics, InMoov URDF & Optical Grasping
     ├── test_phase8_flight_qualification.py # Phase 8: Hardware-in-the-Loop Flight Qualification & Telemetry
-    ├── test_phase9_production_fleet.py # Phase 9: Full Fleet Production Readiness & Clinical Certification
+    ├── test_phase9_production_fleet.py # Phase 9: Full Fleet Production Readiness & Simulation Test Suite
     ├── test_unit_suite.py        # Automated unit test suite (18 comprehensive tests)
     ├── test_realsense.py         # 3D Camera & object detection verification
     ├── test_biosignals.py        # EMG/EEG real-time DSP verification
@@ -238,7 +246,7 @@ PYTHONPATH=. .venv/bin/python tests/test_phase4_release_retract.py --mock
 PYTHONPATH=. .venv/bin/python tests/test_phase4_release_retract.py --real
 ```
 
-### 6.7 Phase 5: Autonomous End-to-End Mission & System Certification
+### 6.7 Phase 5: Autonomous End-to-End Mission & Simulation Test Suite
 To verify full multi-thread loop concurrency, multi-target cycling, autonomous reach and grasp, dynamic co-contraction safety fault injection, emergency stop recovery, and 30+ FPS HUD dashboard telemetry:
 ```bash
 PYTHONPATH=. .venv/bin/python tests/test_phase5_e2e_mission.py --mock
@@ -246,12 +254,12 @@ PYTHONPATH=. .venv/bin/python tests/test_phase5_e2e_mission.py --mock
 PYTHONPATH=. .venv/bin/python tests/test_phase5_e2e_mission.py --real
 ```
 
-### 6.8 Phase 6: Multi-Cycle Durability, Real-Time Stress & Fleet Flight Certification
+### 6.8 Phase 6: Multi-Cycle Durability, Real-Time Stress & Simulation Test Suite
 To verify deterministic multi-rate thread latency and timing jitter, 3-cycle manipulation durability, zero joint drift, high-frequency fault transient resilience, sensor blackout tolerance, 100-waypoint PCA9685 boundary pulse invariants, and electrical power rail margins:
 ```bash
-PYTHONPATH=. .venv/bin/python tests/test_phase6_stress_certification.py --mock
+PYTHONPATH=. .venv/bin/python tests/test_phase6_stress_simulation.py --mock
 # On physical Jetson Orin:
-PYTHONPATH=. .venv/bin/python tests/test_phase6_stress_certification.py --real
+PYTHONPATH=. .venv/bin/python tests/test_phase6_stress_simulation.py --real
 ```
 
 ### 6.9 Phase 7: Robotic Hand Kinematics, InMoov URDF & Optical Grasping Verification
@@ -270,8 +278,8 @@ PYTHONPATH=. .venv/bin/python tests/test_phase8_flight_qualification.py --mock
 PYTHONPATH=. .venv/bin/python tests/test_phase8_flight_qualification.py --real
 ```
 
-### 6.11 Phase 9: Full Fleet Production Readiness & Clinical Certification Verification
-To verify 3D perception throughput (> 40 FPS), biosignal DSP noise rejection (> 20dB 50Hz notch attenuation, < 1ms DAQ chunk latency), dual-mode kinematic solvers benchmark (Analytical 49/50 vs Numerical DLS 50/50), quintic polynomial boundary velocity and acceleration invariants, 12-channel PCA9685 pulse boundary invariants, 4x AS5600 12-bit magnetic encoder resolution (0.0879°/LSB), complete multimodal conflict arbitration truth table with 0ms emergency stop override, 100 Hz UART continuous telemetry with 5-finger tactile physics, and master subsystem health (10/10 operational):
+### 6.11 Phase 9: Full Fleet Production Readiness & Simulation Test Suite Verification
+To verify 3D perception throughput (> 40 FPS), biosignal DSP noise rejection (> 20dB 50Hz notch attenuation, < 1ms DAQ chunk latency), dual-mode kinematic solvers benchmark (Analytical 49/50 vs Numerical DLS 50/50), quintic polynomial boundary velocity and acceleration invariants, 12-channel PCA9685 pulse boundary invariants, 4x AS5600 12-bit magnetic encoder resolution (0.0879°/LSB), complete multimodal conflict arbitration truth table with sub-50ms emergency stop override, 100 Hz UART continuous telemetry with 5-finger tactile physics, and master subsystem health (10/10 operational):
 ```bash
 PYTHONPATH=. .venv/bin/python tests/test_phase9_production_fleet.py --mock
 # On physical Jetson Orin:
