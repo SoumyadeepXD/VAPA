@@ -8,7 +8,7 @@ Executes complete Phase 7 qualification pipeline:
 5. AS5600 12-bit magnetic angle calibration & zero-offset trim math verification
 6. Dual ADS1115 I2C analog conditioning telemetry & ESP32 Node 2 schema validation
 7. Sinusoidal coordinated rolling wave actuation benchmark (5-finger phase-shifted wave)
-8. Master multi-phase lifecycle certification (Phase 0 -> Phase 7 full-stack parity)
+8. Master multi-phase lifecycle simulation verification (Phase 0 -> Phase 7 full-stack parity)
 """
 
 import sys
@@ -276,9 +276,9 @@ def run_phase_7_hand_pipeline(force_mock: bool = True) -> bool:
         passed_checks += 1
 
     # --------------------------------------------------------------------------
-    # Step 8: Master Multi-Phase Full-Stack Lifecycle Certification
+    # Step 8: Master Multi-Phase Full-Stack Lifecycle Simulation Verification
     # --------------------------------------------------------------------------
-    print_header("8. Master Multi-Phase Full-Stack Lifecycle Certification")
+    print_header("8. Master Multi-Phase Full-Stack Lifecycle Simulation Verification")
     # Restore safe home pose and close arm
     arm.go_to_home(duration_s=0.2)
     arm.close()

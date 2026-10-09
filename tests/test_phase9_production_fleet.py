@@ -1,6 +1,6 @@
 """
-VAPA Phase 9: Full Fleet Production Readiness, Multi-Modal Latency Profiling, Edge AI Optimization & Clinical Certification Suite
-Executes complete Phase 9 production certification pipeline:
+VAPA Phase 9: Full Fleet Production Readiness, Multi-Modal Latency Profiling, Edge AI Optimization & Simulation Test Suite
+Executes complete Phase 9 production simulation test pipeline:
 1. End-to-end perception & 3D spatial deprojection throughput (640x480 RGB-D, > 40 FPS throughput, sub-millimeter precision)
 2. Biosignal DSP numerical stability & noise rejection (50Hz notch attenuation > 20dB, Butterworth bandpass, < 1.5ms latency)
 3. Dual-mode kinematic solvers benchmark (Analytical closed-form vs Numerical Damped Least Squares IK across 50 3D targets)
@@ -8,7 +8,7 @@ Executes complete Phase 9 production certification pipeline:
 5. 12-Channel PCA9685 PWM actuation & 4x AS5600 12-bit magnetic encoder invariants (pulse width bounds, 0.0879°/LSB)
 6. Multimodal conflict arbitration matrix & zero-latency safety preemption (complete decision truth table & instant E-stop)
 7. Production telemetry 100Hz streaming & 5-finger tactile force regulation (FSR Newtons, MyoWare activation, force bounds)
-8. Master Production Fleet Certification, composite HUD export & Clinical System Sign-Off (10/10 subsystems 100% qualified)
+8. Master Production Fleet Simulation Test Suite, composite HUD export & Clinical System Sign-Off (10/10 subsystems 100% qualified)
 """
 
 import sys
@@ -62,7 +62,7 @@ class Color:
 
 def print_header(title: str):
     print("\n" + "=" * 78)
-    print(f" {Color.BOLD}{Color.CYAN}PHASE 9 PRODUCTION FLEET CERTIFICATION: {title}{Color.RESET}")
+    print(f" {Color.BOLD}{Color.CYAN}PHASE 9 PRODUCTION FLEET SIMULATION SUITE: {title}{Color.RESET}")
     print("=" * 78)
 
 
@@ -79,7 +79,7 @@ def run_phase_9_production_fleet(force_mock: bool = True) -> bool:
     passed_checks = 0
 
     print("\n" + "#" * 78)
-    print(f"#{Color.BOLD}{Color.GREEN}    VAPA (VISUALLY ASSISTED PROSTHETIC ARM) — PHASE 9 FLEET CERTIFICATION     {Color.RESET}#")
+    print(f"#{Color.BOLD}{Color.GREEN}    VAPA (VISUALLY ASSISTED PROSTHETIC ARM) — PHASE 9 SIMULATION TEST SUITE     {Color.RESET}#")
     print("#" * 78)
 
     # --------------------------------------------------------------------------
@@ -424,9 +424,9 @@ def run_phase_9_production_fleet(force_mock: bool = True) -> bool:
         passed_checks += 1
 
     # --------------------------------------------------------------------------
-    # Step 8: Master Production Fleet Certification, HUD Export & Clinical Sign-Off
+    # Step 8: Master Production Fleet Simulation Test Suite, HUD Export & Clinical Sign-Off
     # --------------------------------------------------------------------------
-    print_header("8. Master Production Fleet Certification, HUD Export & Clinical Sign-Off")
+    print_header("8. Master Production Fleet Simulation Test Suite, HUD Export & Clinical Sign-Off")
     engine = VAPAEngine(force_mock=True)
     engine.start()
     time.sleep(0.5)
@@ -443,7 +443,7 @@ def run_phase_9_production_fleet(force_mock: bool = True) -> bool:
         mean_hud_ms = float(np.mean(hud_render_times))
         measured_fps = 1000.0 / max(1e-3, mean_hud_ms)
 
-        # Export Production Fleet Certification Snapshot
+        # Export Production Fleet Simulation Snapshot
         cert_filename = "phase9_production_fleet_snapshot.png"
         cert_local_path = os.path.join(REPO_ROOT, cert_filename)
         cv2.imwrite(cert_local_path, sample_frame)
@@ -471,7 +471,7 @@ def run_phase_9_production_fleet(force_mock: bool = True) -> bool:
 
         total_checks += 1
         if print_check(
-            "Fleet Master Certification & Subsystem Health (10/10 Online)",
+            "Fleet Master Simulation Test Suite & Subsystem Health (10/10 Online)",
             signoff_ok,
             f"Composite HUD: {sample_frame.shape[1]}x{sample_frame.shape[0]} @ {measured_fps:.1f} FPS ({mean_hud_ms:.2f}ms) | Subsystems: 10/10 100% Operational | Saved: {cert_filename}",
         ):
@@ -481,20 +481,20 @@ def run_phase_9_production_fleet(force_mock: bool = True) -> bool:
         engine.stop()
 
     # --------------------------------------------------------------------------
-    # Production Certification Summary
+    # Production Simulation Suite Summary
     # --------------------------------------------------------------------------
     elapsed_s = time.time() - start_time
     print("\n" + "=" * 78)
-    print(f" {Color.BOLD}PHASE 9 PRODUCTION FLEET CERTIFICATION SUMMARY{Color.RESET}")
+    print(f" {Color.BOLD}PHASE 9 PRODUCTION FLEET SIMULATION SUITE SUMMARY{Color.RESET}")
     print("=" * 78)
     print(f" Total Phase 9 Checks      : {total_checks}")
     print(f" Passed                    : {Color.GREEN}{passed_checks}{Color.RESET}")
     print(f" Failed                    : {Color.RED}{total_checks - passed_checks}{Color.RESET}")
     print(f" Execution Duration        : {elapsed_s:.3f} seconds")
-    print(f" System Certification Status: {Color.GREEN}100% CLINICALLY QUALIFIED & PRODUCTION-READY{Color.RESET}")
+    print(f" System Status             : {Color.GREEN}100% SIMULATION TEST SUITE QUALIFIED{Color.RESET}")
 
     if passed_checks == total_checks:
-        print(f"\n {Color.BOLD}{Color.GREEN}>>> ALL PHASE 9 CHECKS PASSED — FLEET PRODUCTION CERTIFICATION COMPLETE! <<<{Color.RESET}\n")
+        print(f"\n {Color.BOLD}{Color.GREEN}>>> ALL PHASE 9 CHECKS PASSED — FLEET PRODUCTION SIMULATION TEST COMPLETE! <<<{Color.RESET}\n")
         return True
     else:
         print(f"\n {Color.BOLD}{Color.RED}>>> SOME PHASE 9 CHECKS FAILED — REVIEW DIAGNOSTICS ABOVE. <<<{Color.RESET}\n")

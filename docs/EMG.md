@@ -315,10 +315,10 @@ Both tools enforce and print this warning at startup:
 | **Phase 3: EMG Grasp & Force** | `python tests/test_phase3_grasp_force.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
 | **Phase 4: Release & Home Retract** | `python tests/test_phase4_release_retract.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
 | **Phase 5: Autonomous E2E Mission** | `python tests/test_phase5_e2e_mission.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
-| **Phase 6: Multi-Cycle Durability** | `python tests/test_phase6_stress_certification.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
+| **Phase 6: Multi-Cycle Durability** | `python tests/test_phase6_stress_simulation.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
 | **Phase 7: Robotic Hand Kinematics** | `python tests/test_phase7_hand_pipeline.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
 | **Phase 8: HIL Flight Qualification** | `python tests/test_phase8_flight_qualification.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
-| **Phase 9: Production Fleet Certification** | `python tests/test_phase9_production_fleet.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
+| **Phase 9: Production Fleet Simulation** | `python tests/test_phase9_production_fleet.py --mock` | 8 Checks | **8 Passed / 0 Failed** | **PASSED** |
 
 ### 9.2 Inference Latency & Real-Time Performance Benchmark
 
@@ -349,7 +349,7 @@ Evaluated over 100 consecutive 200 ms sliding windows on x86_64 Linux host (meas
 | **Emergency Stop Invariant** | **PASS** | Parallel co-contraction monitoring verified; honest 30–80ms physical debounce latency documented. |
 | **ESP32 Data Matching Tools** | **PASS** | `record_from_esp32.py` and `calibrate_emg_mvc.py` verified with mock and real paths. |
 | **EEG Clinical Audit** | **PASS** | Safety risks documented; FSM authority unchanged. |
-| **Regression Testing (Phases 0–9)** | **PASS** | 100% pass rate across all 11 test suites and phase certification scripts. |
+| **Regression Testing (Phases 0–9)** | **PASS** | 100% pass rate across all 11 test suites and phase simulation test scripts. |
 | **Physical Jetson Orin Telemetry Bench Run** | `UNVERIFIED` | Physical bench test requires connected Jetson Orin carrier board with MyoWare electrodes. |
 
 ### 10.2 Known Risks in Surface EMG Prosthetics

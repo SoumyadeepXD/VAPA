@@ -1,6 +1,6 @@
-# VAPA Phase V — Vision Data, Training, and Validation Certification Report
+# VAPA Phase V — Vision Data, Training, and Validation Simulation Test Report
 
-> **Status**: **CERTIFIED WITH VERIFIED BENCHMARKS & PHYSICAL UNVERIFIED HARDWARE GATES**  
+> **Status**: **VERIFIED BENCHMARKS & PHYSICAL UNVERIFIED HARDWARE GATES**  
 > **Repository**: `SoumyadeepXD/VAPA`  
 > **Target Platform**: NVIDIA Jetson Orin Nano + Intel RealSense D435i + ESP32 Sensor Node  
 > **Evaluation Date**: October 2026  
@@ -96,7 +96,7 @@ In strict compliance with the **"fix bugs only and list every change"** rule, th
 
 ## 5. Exact Checklist for the Human Operator
 
-The AI agent has authored all code, configs, drivers, test suites, and documentation. To complete physical certification on external hardware, the human operator must execute the following physical steps:
+The AI agent has authored all code, configs, drivers, test suites, and documentation. To complete physical qualification on external hardware, the human operator must execute the following physical steps:
 
 ### Phase A: Physical Dataset Capture (On Arm / Tabletop)
 1. Mount the Intel RealSense D435i on the prosthetic arm or tripod.
@@ -134,7 +134,7 @@ The AI agent has authored all code, configs, drivers, test suites, and documenta
    ```
 
 ### Phase D: Evaluate on the Human Test Set
-1. Run final detector certification against the captured test set:
+1. Run final detector evaluation against the captured test set:
    ```bash
    PYTHONPATH=. python tools/evaluate_detector.py --model runs/train/yolov8n_vapa/weights/best.pt --split test
    ```

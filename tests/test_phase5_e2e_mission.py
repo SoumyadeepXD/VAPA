@@ -42,7 +42,7 @@ class Color:
 
 def print_header(title: str):
     print("\n" + "=" * 78)
-    print(f" {Color.BOLD}{Color.CYAN}PHASE 5 E2E MISSION CERTIFICATION: {title}{Color.RESET}")
+    print(f" {Color.BOLD}{Color.CYAN}PHASE 5 E2E MISSION SIMULATION TEST SUITE: {title}{Color.RESET}")
     print("=" * 78)
 
 
@@ -59,7 +59,7 @@ def run_phase_5_e2e_mission(force_mock: bool = True) -> bool:
     passed_checks = 0
 
     print("\n" + "#" * 78)
-    print(f"#{Color.BOLD}{Color.GREEN}   VAPA (VISUALLY ASSISTED PROSTHETIC ARM) — PHASE 5 MISSION CERTIFICATION    {Color.RESET}#")
+    print(f"#{Color.BOLD}{Color.GREEN}   VAPA (VISUALLY ASSISTED PROSTHETIC ARM) — PHASE 5 MISSION SIMULATION SUITE    {Color.RESET}#")
     print("#" * 78)
 
     # --------------------------------------------------------------------------
@@ -281,16 +281,16 @@ def run_phase_5_e2e_mission(force_mock: bool = True) -> bool:
     # --------------------------------------------------------------------------
     elapsed_s = time.time() - start_time
     print("\n" + "=" * 78)
-    print(f" {Color.BOLD}PHASE 5 E2E MISSION CERTIFICATION SUMMARY{Color.RESET}")
+    print(f" {Color.BOLD}PHASE 5 E2E MISSION SIMULATION SUITE SUMMARY{Color.RESET}")
     print("=" * 78)
     print(f" Total Phase 5 Checks      : {total_checks}")
     print(f" Passed                    : {Color.GREEN}{passed_checks}{Color.RESET}")
     print(f" Failed                    : {Color.RED}{total_checks - passed_checks}{Color.RESET}")
     print(f" Execution Duration        : {elapsed_s:.3f} seconds")
-    print(f" Final System Status       : {Color.GREEN}CERTIFIED & FLIGHT-READY (Jetson Orin + ESP32){Color.RESET}")
+    print(f" Final System Status       : {Color.GREEN}SIMULATION TEST SUITE QUALIFIED (Jetson Orin + ESP32){Color.RESET}")
 
     if passed_checks == total_checks:
-        print(f"\n {Color.BOLD}{Color.GREEN}>>> ALL PHASE 5 CHECKS PASSED — FULL SYSTEM INTEGRATION CERTIFIED! <<<{Color.RESET}\n")
+        print(f"\n {Color.BOLD}{Color.GREEN}>>> ALL PHASE 5 CHECKS PASSED — FULL SYSTEM SIMULATION SUITE QUALIFIED! <<<{Color.RESET}\n")
         return True
     else:
         print(f"\n {Color.BOLD}{Color.RED}>>> PHASE 5 ISSUES DETECTED <<<{Color.RESET}\n")

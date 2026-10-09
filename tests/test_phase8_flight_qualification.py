@@ -365,7 +365,7 @@ def run_phase_8_flight_qualification(force_mock: bool = True) -> bool:
             passed_checks += 1
 
         # ----------------------------------------------------------------------
-        # Step 8: Composite 960x480 HUD Generation & Master Flight Certification Sign-Off
+        # Step 8: Composite 960x480 HUD Generation & Master Flight Qualification Sign-Off
         # ----------------------------------------------------------------------
         print_header("8. Composite 960x480 HUD Generation & Master Flight Qualification Sign-Off")
         
@@ -428,7 +428,7 @@ def run_phase_8_flight_qualification(force_mock: bool = True) -> bool:
     print(f" Passed                    : {Color.GREEN}{passed_checks}{Color.RESET}")
     print(f" Failed                    : {Color.RED}{total_checks - passed_checks}{Color.RESET}")
     print(f" Execution Duration        : {elapsed_s:.3f} seconds")
-    print(f" Flight Qualification      : {Color.GREEN}100% FLIGHT CERTIFIED (NVIDIA JETSON ORIN + ESP32){Color.RESET}")
+    print(f" Flight Qualification      : {Color.GREEN}100% SIMULATION QUALIFIED (NVIDIA JETSON ORIN + ESP32){Color.RESET}")
 
     if passed_checks == total_checks:
         print(f"\n {Color.BOLD}{Color.GREEN}>>> ALL PHASE 8 CHECKS PASSED — COMPLETE VAPA FLIGHT SYSTEM QUALIFIED! <<<{Color.RESET}\n")

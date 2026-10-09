@@ -178,11 +178,11 @@ VAPA/
     ├── test_phase2_neural_reach.py # Phase 2: Neural Decoding, Cognitive Selection & Reach Planning
     ├── test_phase3_grasp_force.py # Phase 3: EMG Muscle Grasp & Closed-Loop Force Regulation
     ├── test_phase4_release_retract.py # Phase 4: Object Holding, Extensor Release & Retraction to Home
-    ├── test_phase5_e2e_mission.py # Phase 5: Autonomous End-to-End Mission & System Certification
-    ├── test_phase6_stress_certification.py # Phase 6: Multi-Cycle Durability, Stress & Fleet Flight Certification
+    ├── test_phase5_e2e_mission.py # Phase 5: Autonomous End-to-End Mission & Simulation Test Suite
+    ├── test_phase6_stress_simulation.py # Phase 6: Multi-Cycle Durability, Stress & Simulation Test Suite
     ├── test_phase7_hand_pipeline.py # Phase 7: Robotic Hand Kinematics, InMoov URDF & Optical Grasping
     ├── test_phase8_flight_qualification.py # Phase 8: Hardware-in-the-Loop Flight Qualification & Telemetry
-    ├── test_phase9_production_fleet.py # Phase 9: Full Fleet Production Readiness & Clinical Certification
+    ├── test_phase9_production_fleet.py # Phase 9: Full Fleet Production Readiness & Simulation Test Suite
     ├── test_unit_suite.py        # Automated unit test suite (18 comprehensive tests)
     ├── test_realsense.py         # 3D Camera & object detection verification
     ├── test_biosignals.py        # EMG/EEG real-time DSP verification
@@ -246,7 +246,7 @@ PYTHONPATH=. .venv/bin/python tests/test_phase4_release_retract.py --mock
 PYTHONPATH=. .venv/bin/python tests/test_phase4_release_retract.py --real
 ```
 
-### 6.7 Phase 5: Autonomous End-to-End Mission & System Certification
+### 6.7 Phase 5: Autonomous End-to-End Mission & Simulation Test Suite
 To verify full multi-thread loop concurrency, multi-target cycling, autonomous reach and grasp, dynamic co-contraction safety fault injection, emergency stop recovery, and 30+ FPS HUD dashboard telemetry:
 ```bash
 PYTHONPATH=. .venv/bin/python tests/test_phase5_e2e_mission.py --mock
@@ -254,12 +254,12 @@ PYTHONPATH=. .venv/bin/python tests/test_phase5_e2e_mission.py --mock
 PYTHONPATH=. .venv/bin/python tests/test_phase5_e2e_mission.py --real
 ```
 
-### 6.8 Phase 6: Multi-Cycle Durability, Real-Time Stress & Fleet Flight Certification
+### 6.8 Phase 6: Multi-Cycle Durability, Real-Time Stress & Simulation Test Suite
 To verify deterministic multi-rate thread latency and timing jitter, 3-cycle manipulation durability, zero joint drift, high-frequency fault transient resilience, sensor blackout tolerance, 100-waypoint PCA9685 boundary pulse invariants, and electrical power rail margins:
 ```bash
-PYTHONPATH=. .venv/bin/python tests/test_phase6_stress_certification.py --mock
+PYTHONPATH=. .venv/bin/python tests/test_phase6_stress_simulation.py --mock
 # On physical Jetson Orin:
-PYTHONPATH=. .venv/bin/python tests/test_phase6_stress_certification.py --real
+PYTHONPATH=. .venv/bin/python tests/test_phase6_stress_simulation.py --real
 ```
 
 ### 6.9 Phase 7: Robotic Hand Kinematics, InMoov URDF & Optical Grasping Verification
@@ -278,7 +278,7 @@ PYTHONPATH=. .venv/bin/python tests/test_phase8_flight_qualification.py --mock
 PYTHONPATH=. .venv/bin/python tests/test_phase8_flight_qualification.py --real
 ```
 
-### 6.11 Phase 9: Full Fleet Production Readiness & Clinical Certification Verification
+### 6.11 Phase 9: Full Fleet Production Readiness & Simulation Test Suite Verification
 To verify 3D perception throughput (> 40 FPS), biosignal DSP noise rejection (> 20dB 50Hz notch attenuation, < 1ms DAQ chunk latency), dual-mode kinematic solvers benchmark (Analytical 49/50 vs Numerical DLS 50/50), quintic polynomial boundary velocity and acceleration invariants, 12-channel PCA9685 pulse boundary invariants, 4x AS5600 12-bit magnetic encoder resolution (0.0879°/LSB), complete multimodal conflict arbitration truth table with sub-50ms emergency stop override, 100 Hz UART continuous telemetry with 5-finger tactile physics, and master subsystem health (10/10 operational):
 ```bash
 PYTHONPATH=. .venv/bin/python tests/test_phase9_production_fleet.py --mock

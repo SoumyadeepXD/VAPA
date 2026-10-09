@@ -1,6 +1,6 @@
 """
-VAPA Phase 6: Multi-Cycle Durability, Real-Time Stress & Hardware-in-the-Loop Certification Suite
-Executes complete Phase 6 qualification pipeline:
+VAPA Phase 6: Multi-Cycle Durability, Real-Time Stress & Hardware-in-the-Loop Simulation Test Suite
+Executes complete Phase 6 simulation test pipeline:
 1. Deterministic multi-rate thread latency & timing jitter profiling (Vision, Biosignals, Control)
 2. Consecutive multi-cycle durability & zero joint drift verification (3 complete manipulation loops)
 3. High-frequency dynamic fault transient stress testing (Rapid E-Stop -> Reset cycles)
@@ -8,7 +8,7 @@ Executes complete Phase 6 qualification pipeline:
 5. Hardware servo command boundary & PWM pulse invariant audit (100 randomized stress waypoints)
 6. Closed-loop TCA9548A I2C multiplexer & 4x AS5600 magnetic encoder telemetry synchronization
 7. Electrical power rail budget & peak current margin audit (Rail 1 Direct, Rail 2 Buck, Rail 3 BEC)
-8. Final fleet flight certification & operational readiness verification
+8. Final simulation test suite & operational readiness verification
 """
 
 import sys
@@ -63,7 +63,7 @@ class Color:
 
 def print_header(title: str):
     print("\n" + "=" * 78)
-    print(f" {Color.BOLD}{Color.CYAN}PHASE 6 STRESS & CERTIFICATION: {title}{Color.RESET}")
+    print(f" {Color.BOLD}{Color.CYAN}PHASE 6 STRESS & SIMULATION TEST SUITE: {title}{Color.RESET}")
     print("=" * 78)
 
 
@@ -74,13 +74,13 @@ def print_check(name: str, passed: bool, details: str = ""):
     return passed
 
 
-def run_phase_6_stress_certification(force_mock: bool = True) -> bool:
+def run_phase_6_stress_simulation(force_mock: bool = True) -> bool:
     start_time = time.time()
     total_checks = 0
     passed_checks = 0
 
     print("\n" + "#" * 78)
-    print(f"#{Color.BOLD}{Color.GREEN}   VAPA (VISUALLY ASSISTED PROSTHETIC ARM) — PHASE 6 STRESS & CERTIFICATION    {Color.RESET}#")
+    print(f"#{Color.BOLD}{Color.GREEN}   VAPA (VISUALLY ASSISTED PROSTHETIC ARM) — PHASE 6 STRESS & SIMULATION TEST SUITE    {Color.RESET}#")
     print("#" * 78)
 
     # --------------------------------------------------------------------------
@@ -332,16 +332,16 @@ def run_phase_6_stress_certification(force_mock: bool = True) -> bool:
         passed_checks += 1
 
     # --------------------------------------------------------------------------
-    # Step 8: Final Fleet Flight Certification & Operational Readiness
+    # Step 8: Final Simulation Test Suite & Operational Readiness
     # --------------------------------------------------------------------------
-    print_header("8. Final Fleet Flight Certification & Operational Readiness")
+    print_header("8. Final Simulation Test Suite & Operational Readiness")
     # Safely park arm controller
     arm.go_to_home(duration_s=0.2)
     arm.close()
 
     total_checks += 1
     if print_check(
-        "VAPA Fleet Flight Readiness Certification",
+        "VAPA Simulation Test Suite Readiness",
         passed_checks == (total_checks - 1),
         "All 7 prior stress & durability gates passed with zero exceptions",
     ):
@@ -352,23 +352,27 @@ def run_phase_6_stress_certification(force_mock: bool = True) -> bool:
     # --------------------------------------------------------------------------
     elapsed_s = time.time() - start_time
     print("\n" + "=" * 78)
-    print(f" {Color.BOLD}PHASE 6 STRESS & CERTIFICATION SUMMARY{Color.RESET}")
+    print(f" {Color.BOLD}PHASE 6 STRESS & SIMULATION TEST SUITE SUMMARY{Color.RESET}")
     print("=" * 78)
     print(f" Total Phase 6 Checks      : {total_checks}")
     print(f" Passed                    : {Color.GREEN}{passed_checks}{Color.RESET}")
     print(f" Failed                    : {Color.RED}{total_checks - passed_checks}{Color.RESET}")
     print(f" Execution Duration        : {elapsed_s:.3f} seconds")
-    print(f" System Status             : {Color.GREEN}COMMERCIALLY CERTIFIED & FLIGHT-READY{Color.RESET}")
+    print(f" System Status             : {Color.GREEN}SIMULATION TEST SUITE QUALIFIED{Color.RESET}")
 
     if passed_checks == total_checks:
-        print(f"\n {Color.BOLD}{Color.GREEN}>>> ALL PHASE 6 CHECKS PASSED — VAPA FLIGHT CERTIFICATION COMPLETE! <<<{Color.RESET}\n")
+        print(f"\n {Color.BOLD}{Color.GREEN}>>> ALL PHASE 6 CHECKS PASSED — SIMULATION TEST SUITE COMPLETE! <<<{Color.RESET}\n")
         return True
     else:
         print(f"\n {Color.BOLD}{Color.RED}>>> PHASE 6 ISSUES DETECTED <<<{Color.RESET}\n")
         return False
 
 
+# Compatibility alias
+run_phase_6_stress_certification = run_phase_6_stress_simulation
+
+
 if __name__ == "__main__":
     force_mock_flag = "--mock" in sys.argv or "--real" not in sys.argv
-    success = run_phase_6_stress_certification(force_mock=force_mock_flag)
+    success = run_phase_6_stress_simulation(force_mock=force_mock_flag)
     sys.exit(0 if success else 1)
