@@ -46,8 +46,9 @@ logger = logging.getLogger("VAPA.Engine")
 
 class VAPAEngine:
     """Master multi-threaded control engine for Visually-Assisted Prosthetic Arm."""
-    def __init__(self, force_mock: bool = False):
+    def __init__(self, force_mock: bool = False, bench_no_failsafe: bool = False):
         self.force_mock = force_mock
+        self.bench_no_failsafe = bench_no_failsafe
         self.running = False
         self.lock = threading.Lock()
 
@@ -82,7 +83,11 @@ class VAPAEngine:
         self.fk = ForwardKinematics(self.arm_model)
         self.ik = InverseKinematics(self.arm_model)
         self.planner = TrajectoryPlanner()
-        self.arm = ArmController(force_mock=force_mock)
+        self.arm = ArmController(
+            force_mock=force_mock,
+            bench_no_failsafe=bench_no_failsafe,
+            telemetry_provider=self.streamer.get_latest_telemetry,
+        )
         self.encoders = AS5600EncoderMux(force_mock=force_mock)
 
         # 4. State Machine

@@ -66,6 +66,7 @@ class ESP32TelemetryFrame:
         "eeg_volts",
         "enc_deg",
         "estop_button_pressed",
+        "oe_ok",
         "esp_timestamp_ms",
         "arrival_time",
         "is_valid",
@@ -81,6 +82,7 @@ class ESP32TelemetryFrame:
         eeg_volts: float = 0.0,
         enc_deg: list[float] = None,
         estop_button_pressed: bool = False,
+        oe_ok: bool = True,
         esp_timestamp_ms: int = 0,
         is_valid: bool = True,
     ):
@@ -106,6 +108,7 @@ class ESP32TelemetryFrame:
         self.eeg_volts = float(eeg_volts)
         self.enc_deg = enc_deg or [0.0]
         self.estop_button_pressed = bool(estop_button_pressed)
+        self.oe_ok = bool(oe_ok)
         self.esp_timestamp_ms = int(esp_timestamp_ms)
         self.arrival_time = time.time()
         self.is_valid = is_valid
@@ -321,8 +324,10 @@ class AsyncESP32Receiver:
                             flex = ((pkt[17] << 8) | pkt[18]) / 1000.0
                             ext = ((pkt[19] << 8) | pkt[20]) / 1000.0
                             eeg = ((pkt[21] << 8) | pkt[22]) / 1000.0
-                            enc = [((pkt[23] << 8) | pkt[24]) / 100.0]
-                            estop = bool(pkt[25] != 0)
+                            flags = pkt[25]
+                            estop = bool(flags & 0x01)
+                            oe_tripped = bool(flags & 0x02)
+                            oe_ok = (not oe_tripped) and (not estop)
                             ts = (pkt[26] << 24) | (pkt[27] << 16) | (pkt[28] << 8) | pkt[29]
 
                             frame = ESP32TelemetryFrame(
@@ -333,6 +338,7 @@ class AsyncESP32Receiver:
                                 eeg_volts=eeg,
                                 enc_deg=enc,
                                 estop_button_pressed=estop,
+                                oe_ok=oe_ok,
                                 esp_timestamp_ms=ts,
                                 is_valid=True,
                             )
@@ -371,6 +377,7 @@ class AsyncESP32Receiver:
                         eeg = data.get("eeg", 0.0)
                         enc = data.get("enc", [0.0])
                         estop = bool(data.get("estop", 0))
+                        oe_ok = bool(data.get("oe_ok", not estop))
                         ts = data.get("ts", 0)
 
                         frame = ESP32TelemetryFrame(
@@ -381,6 +388,7 @@ class AsyncESP32Receiver:
                             eeg_volts=eeg,
                             enc_deg=enc,
                             estop_button_pressed=estop,
+                            oe_ok=oe_ok,
                             esp_timestamp_ms=ts,
                             is_valid=True,
                         )
@@ -460,6 +468,8 @@ class AsyncESP32Receiver:
             sim_flex = float(0.20 + 0.05 * np.sin(t * 0.8))
             sim_ext  = float(0.18 + 0.04 * np.cos(t * 0.8))
 
+        sim_oe_ok = not (scenario in ("co_contraction", "co_contract", "estop", "estop_button"))
+
         frame = ESP32TelemetryFrame(
             seq=seq,
             fsr_volts=sim_fsr,
@@ -468,6 +478,7 @@ class AsyncESP32Receiver:
             eeg_volts=sim_eeg,
             enc_deg=sim_enc,
             estop_button_pressed=sim_estop,
+            oe_ok=sim_oe_ok,
             esp_timestamp_ms=int(t * 1000) % 1000000,
             is_valid=True,
         )

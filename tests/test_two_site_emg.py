@@ -401,7 +401,76 @@ class TestHardwareEstopAndTelemetry(unittest.TestCase):
         self.assertAlmostEqual(frame.emg_ext_volts, 0.2, places=2)
         self.assertAlmostEqual(frame.encoder_angle_deg, 125.4, places=1)
         self.assertFalse(frame.estop_button_pressed)
+        self.assertTrue(frame.oe_ok)
+
+    def test_arming_refused_when_oe_disabled_in_config(self):
+        """Arming must refuse if ESP32_PCA9685_OE_ENABLED is False, unless bench_no_failsafe is True."""
+        import tempfile
+        import unittest.mock as mock
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "timestamp": time.time(),
+                "tool_version": "1.0.0",
+                "servos": {"joint_wrist_flex": {"min_deg": 15.0, "max_deg": 165.0, "home_deg": 90.0}}
+            }, f)
+            calib_file = f.name
+
+        try:
+            with mock.patch("config.hardware_config.ESP32_PCA9685_OE_ENABLED", False):
+                mock_driver = MockServoDriver()
+                # Default safety: must refuse arming
+                ctrl_safe = ArmController(driver=mock_driver, force_mock=True, calibration_path=calib_file)
+                self.assertFalse(ctrl_safe.is_armed)
+
+                # Bench override: permitted to arm
+                ctrl_bench = ArmController(
+                    driver=mock_driver,
+                    force_mock=True,
+                    calibration_path=calib_file,
+                    bench_no_failsafe=True,
+                )
+                self.assertTrue(ctrl_bench.is_armed)
+        finally:
+            os.remove(calib_file)
+
+    def test_arming_refused_when_telemetry_oe_not_ok(self):
+        """Arming must refuse if ESP32 telemetry reports oe_ok=False."""
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({
+                "calibrated": True,
+                "timestamp": time.time(),
+                "tool_version": "1.0.0",
+                "servos": {"joint_wrist_flex": {"min_deg": 15.0, "max_deg": 165.0, "home_deg": 90.0}}
+            }, f)
+            calib_file = f.name
+
+        try:
+            mock_driver = MockServoDriver()
+            bad_frame = ESP32TelemetryFrame(oe_ok=False)
+            ctrl_bad = ArmController(
+                driver=mock_driver,
+                force_mock=True,
+                calibration_path=calib_file,
+                telemetry_provider=lambda: bad_frame,
+            )
+            self.assertFalse(ctrl_bad.is_armed)
+
+            # Bench override bypasses this
+            ctrl_bench = ArmController(
+                driver=mock_driver,
+                force_mock=True,
+                calibration_path=calib_file,
+                bench_no_failsafe=True,
+                telemetry_provider=lambda: bad_frame,
+            )
+            self.assertTrue(ctrl_bench.is_armed)
+            self.assertTrue(ctrl_bench.bench_no_failsafe)
+        finally:
+            os.remove(calib_file)
 
 
 if __name__ == "__main__":
     unittest.main()
+

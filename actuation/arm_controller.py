@@ -14,6 +14,7 @@ import json
 import time
 import logging
 import threading
+from typing import Optional, Callable, Any
 import numpy as np
 
 from config.hardware_config import SIMULATION_MODE, SERVO_CHANNELS, SERVO_ALIASES
@@ -54,19 +55,35 @@ class ArmController:
         driver: BaseServoDriver = None,
         force_mock: bool = False,
         calibration_path: str = "config/servo_calibration.json",
+        bench_no_failsafe: bool = False,
+        telemetry_provider: Optional[Callable[[], Any]] = None,
     ):
         self.lock = threading.RLock()
         self.arm_model = ArmModel()
         self.dt = 1.0 / ACTUATION_LOOP_RATE_HZ
         self.is_mock = False
         self.calibration_path = calibration_path
+        self.bench_no_failsafe = bool(bench_no_failsafe)
+        self.telemetry_provider = telemetry_provider
         self.servo_calibrated_limits = {}
+        self.last_bench_warning_time = 0.0
         self.is_armed = False
 
-        # 1. Arming Gate: Validate Servo Calibration File
-        self.is_armed = self._load_servo_calibration(calibration_path)
+        # 1. Arming Gate A: Validate Servo Calibration File
+        calib_ok = self._load_servo_calibration(calibration_path)
 
-        # 2. Driver Discovery
+        # 2. Arming Gate B: Validate ESP32 PCA9685 /OE Supervision
+        oe_ok = self._check_oe_safety()
+
+        if self.bench_no_failsafe:
+            if not oe_ok:
+                logger.warning("[BENCH OVERRIDE] OE failsafe check failed, but arming permitted due to --bench-no-failsafe.")
+            self.is_armed = calib_ok
+            self._start_bench_warning_loop()
+        else:
+            self.is_armed = calib_ok and oe_ok
+
+        # 3. Driver Discovery
         if driver is not None:
             self.driver = driver
         elif force_mock or SIMULATION_MODE:
@@ -89,7 +106,7 @@ class ArmController:
                     self.driver = MockServoDriver()
                     self.is_mock = True
 
-        # 3. Initialize arm & hand to Calibrated Home Position
+        # 4. Initialize arm & hand to Calibrated Home Position
         self.current_angles = DEFAULT_BUILD_PHASE_HOME.copy()
         for j, cfg in self.servo_calibrated_limits.items():
             self.current_angles[j] = cfg["home_deg"]
@@ -104,6 +121,55 @@ class ArmController:
         self.current_force_n = 0.0
         self.is_emergency_stopped = False
         logger.info(f"ArmController ready (Armed: {self.is_armed}).")
+
+    def _check_oe_safety(self) -> bool:
+        """Validates ESP32 PCA9685 /OE supervision hardware configuration and live telemetry."""
+        from config.hardware_config import ESP32_PCA9685_OE_ENABLED
+        if not ESP32_PCA9685_OE_ENABLED:
+            logger.critical(
+                "ArmController refusing to arm: ESP32_PCA9685_OE_ENABLED is False in config/hardware_config.py! "
+                "Hardware /OE supervision must be enabled. Pass --bench-no-failsafe to override on bench."
+            )
+            return False
+
+        if self.telemetry_provider is not None:
+            try:
+                telem = self.telemetry_provider()
+                if telem is not None:
+                    oe_status = getattr(telem, "oe_ok", False)
+                    if not oe_status:
+                        logger.critical(
+                            "ArmController refusing to arm: ESP32 telemetry reports oe_ok=False! "
+                            "Hardware /OE supervision is tripped or inactive. Pass --bench-no-failsafe to override on bench."
+                        )
+                        return False
+            except Exception as e:
+                logger.critical(f"Error checking telemetry for oe_ok: {e}. Refusing to arm.")
+                return False
+        return True
+
+    def _print_bench_warning_if_due(self, force: bool = False):
+        now = time.time()
+        if self.bench_no_failsafe and (force or (now - self.last_bench_warning_time >= 10.0)):
+            self.last_bench_warning_time = now
+            msg = (
+                "\n" + "*" * 80 + "\n"
+                "[LOUD SAFETY WARNING] BENCH OVERRIDE ACTIVE (--bench-no-failsafe)!\n"
+                "PCA9685 HARDWARE /OE SUPERVISION IS BYPASSED. SERVOS MAY OPERATE WITHOUT HARDWARE CUTOFF!\n"
+                "KEEP PHYSICAL EMERGENCY STOP WITHIN REACH AT ALL TIMES!\n"
+                + "*" * 80 + "\n"
+            )
+            print(msg, flush=True)
+            logger.warning(msg)
+
+    def _start_bench_warning_loop(self):
+        self._print_bench_warning_if_due(force=True)
+        def _warn_worker():
+            while getattr(self, "bench_no_failsafe", False):
+                time.sleep(10.0)
+                self._print_bench_warning_if_due(force=True)
+        t = threading.Thread(target=_warn_worker, name="BenchWarningThread", daemon=True)
+        t.start()
 
     def _load_servo_calibration(self, path: str) -> bool:
         """Loads and validates per-servo calibrated min/max/home limits. Fails closed."""

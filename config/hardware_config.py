@@ -265,6 +265,6 @@ BIO_CHANNELS = {
 
 # ESP32 Hardware Safety Pins
 ESP32_PCA9685_OE_PIN = 25       # ESP32 GPIO 25 connected to PCA9685 Output Enable (/OE)
-ESP32_PCA9685_OE_ENABLED = False  # Set True when physical /OE wire is attached; defaults off for bench safety
+ESP32_PCA9685_OE_ENABLED = True   # Required for arming unless --bench-no-failsafe is specified
 ESP32_ESTOP_BUTTON_PIN = 27     # ESP32 GPIO 27 momentary push button to GND (internal pullup)
 ESP32_FORCE_CEILING_N = 12.0    # Firmware hard force limit per FSR tripping OE independent of Jetson

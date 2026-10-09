@@ -31,7 +31,7 @@ VAPA - Multi-Sensor Node (Dual ADS1115 + 5x FSRs + AS5600 Encoders + Safety OE)
 // Hardware Safety & E-Stop Pins
 #define ESTOP_BUTTON_PIN        27      // External physical emergency stop button (Active LOW)
 #define PCA9685_OE_PIN          25      // PCA9685 Output Enable (/OE pin; HIGH = Servos Disabled)
-#define PCA9685_OE_ENABLED      false   // Config flag defaulting off for bench safety (set true when wire attached)
+#define PCA9685_OE_ENABLED      true    // Set true: physical /OE wire supervision enabled
 
 // 5x FSR Analog Pins (GPIO 32 - 36)
 #define FSR1_PIN                32      // Thumb
@@ -318,8 +318,11 @@ void loop() {
       uint16_t enc_cd = (uint16_t)(filtered_enc1 * 100.0f);
       bin_pkt[23] = (uint8_t)(enc_cd >> 8);
       bin_pkt[24] = (uint8_t)(enc_cd);
-      // E-Stop flag (1 byte)
-      bin_pkt[25] = estop_active ? 1 : 0;
+      // Flags byte (1 byte): bit 0 = estop_active, bit 1 = oe_disabled
+      uint8_t flags = 0;
+      if (estop_active) flags |= 0x01;
+      if (!PCA9685_OE_ENABLED || estop_active) flags |= 0x02;
+      bin_pkt[25] = flags;
       // Timestamp (4 bytes)
       uint32_t ts_now = millis();
       bin_pkt[26] = (uint8_t)(ts_now >> 24);
@@ -334,10 +337,10 @@ void loop() {
       Serial2.write(bin_pkt, sizeof(bin_pkt));
       packet_seq++;
     #else
-      // High-Speed JSON Frame (includes emg_flex, emg_ext, legacy emg, and estop)
-      char json_buffer[250];
+      // High-Speed JSON Frame (includes emg_flex, emg_ext, legacy emg, estop, and oe_ok)
+      char json_buffer[256];
       snprintf(json_buffer, sizeof(json_buffer),
-               "{\"seq\":%lu,\"fsr\":[%.3f,%.3f,%.3f,%.3f,%.3f],\"emg_flex\":%.3f,\"emg_ext\":%.3f,\"emg\":%.3f,\"eeg\":%.3f,\"enc\":[%.1f],\"estop\":%d,\"ts\":%lu}\n",
+               "{\"seq\":%lu,\"fsr\":[%.3f,%.3f,%.3f,%.3f,%.3f],\"emg_flex\":%.3f,\"emg_ext\":%.3f,\"emg\":%.3f,\"eeg\":%.3f,\"enc\":[%.1f],\"estop\":%d,\"oe_ok\":%d,\"ts\":%lu}\n",
                packet_seq++,
                filtered_fsr[0], filtered_fsr[1], filtered_fsr[2], filtered_fsr[3], filtered_fsr[4],
                filtered_emg_flex,
@@ -346,6 +349,7 @@ void loop() {
                filtered_eeg,
                filtered_enc1,
                estop_active ? 1 : 0,
+               (PCA9685_OE_ENABLED && !estop_active) ? 1 : 0,
                millis());
 
       Serial2.print(json_buffer);
