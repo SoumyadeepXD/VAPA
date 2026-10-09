@@ -1,0 +1,51 @@
+{
+  "subject_id": "SUBJ_01",
+  "calibration_timestamp": 1791525280.8598137,
+  "channels": {
+    "flexor": {
+      "channel_idx": 0,
+      "site": "forearm_flexor",
+      "muscle": "flexor_digitorum_superficialis",
+      "action": "GRASP_CLOSE",
+      "rest_mean_v": 0.0732,
+      "rest_std_v": 0.0141,
+      "mvc_peak_v": 2.1837,
+      "dynamic_range_v": 2.1105,
+      "rest_threshold_v": 0.3265,
+      "activation_threshold_v": 0.6641,
+      "high_contraction_threshold_v": 1.445
+    },
+    "extensor": {
+      "channel_idx": 1,
+      "site": "forearm_extensor",
+      "muscle": "extensor_digitorum_communis",
+      "action": "HAND_OPEN",
+      "rest_mean_v": 0.0754,
+      "rest_std_v": 0.0149,
+      "mvc_peak_v": 2.2,
+      "dynamic_range_v": 2.1246,
+      "rest_threshold_v": 0.3303,
+      "activation_threshold_v": 0.6703,
+      "high_contraction_threshold_v": 1.4564
+    }
+  },
+  "baseline_voltage_v": 0.0732,
+  "baseline_std_v": 0.0141,
+  "mvc_peak_voltage_v": 2.1837,
+  "dynamic_range_v": 2.1105,
+  "thresholds_normalized": {
+    "rest": 0.12,
+    "activation": 0.28,
+    "high_contraction": 0.65,
+    "co_contraction": 0.85
+  },
+  "deadband_normalized": 0.12,
+  "co_contraction_threshold_normalized": 0.85,
+  "smoothing_alpha": 0.35,
+  "hysteresis_window_count": 3,
+  "safety_invariants": {
+    "fail_closed_mode": true,
+    "parallel_estop_active": true,
+    "lead_off_detection_active": true
+  }
+}
