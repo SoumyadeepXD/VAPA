@@ -21,6 +21,11 @@ DEFAULT_CONFIG_PATH = os.path.join(
 )
 
 
+BLOCKED_AUTO_PROFILE_CLASSES = frozenset({
+    "knife", "scissors", "scissor", "blade", "dagger", "box cutter"
+})
+
+
 class GripProfile:
     """Represents grasping parameters for a specific object class."""
     __slots__ = (
@@ -82,6 +87,13 @@ class GripProfileManager:
             self.profiles.clear()
             for key, val in data.items():
                 if isinstance(val, dict):
+                    k_lower = key.lower()
+                    if k_lower in BLOCKED_AUTO_PROFILE_CLASSES:
+                        logger.warning(
+                            f"[SAFETY] Sharp object '{key}' in config ignored. "
+                            f"Custom profiles are strictly prohibited for dangerous blades."
+                        )
+                        continue
                     profile = GripProfile(
                         label=key,
                         target_force_n=val.get("target_force_n", 3.5),
@@ -90,7 +102,7 @@ class GripProfileManager:
                         speed_scale=val.get("speed_scale", 0.8),
                         aperture_ratio=val.get("aperture_ratio", 1.0),
                     )
-                    self.profiles[key.lower()] = profile
+                    self.profiles[k_lower] = profile
 
             if "default" not in self.profiles:
                 self.profiles["default"] = GripProfile("default", 3.5, 7.0, "POWER", 0.8, 1.0)
@@ -118,11 +130,19 @@ class GripProfileManager:
         """
         Retrieves matching grip profile for object_class.
         Falls back to default profile if unknown, low confidence (< 0.50), or stale.
+        Dangerous objects (knife, scissors) are strictly blocked from automatic profiles.
         """
         if object_class is None or confidence < 0.50:
             return self.profiles["default"]
 
         key = str(object_class).strip().lower()
+        if key in BLOCKED_AUTO_PROFILE_CLASSES:
+            logger.warning(
+                f"[SAFETY] Dangerous sharp object '{key}' detected! "
+                f"Refusing automatic custom grip profile; using default profile only."
+            )
+            return self.profiles["default"]
+
         return self.profiles.get(key, self.profiles["default"])
 
     def on_grasp_start(self, object_class: str = None, confidence: float = 1.0) -> GripProfile:

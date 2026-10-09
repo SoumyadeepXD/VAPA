@@ -2,101 +2,97 @@
 # Selected ONLY at the onset of grasp closure.
 # Mid-grasp updates may ONLY LOWER the force ceiling (monotonic safety constraint).
 # Perception NEVER initiates motion on its own.
+# NOTE: All profile force values are marked TODO(calibrate).
+# Dangerous sharp objects (knife, scissors) are explicitly prohibited from custom
+# grip profiles; they strictly fall back to default power grasp only.
 
 default:
-  target_force_n: 3.5
-  force_ceiling_n: 7.0
+  target_force_n: 3.5   # TODO(calibrate)
+  force_ceiling_n: 7.0  # TODO(calibrate)
   grasp_type: "POWER"
   speed_scale: 0.8
   aperture_ratio: 1.0
 
 mug:
-  target_force_n: 4.5
-  force_ceiling_n: 8.0
+  target_force_n: 4.5   # TODO(calibrate)
+  force_ceiling_n: 8.0  # TODO(calibrate)
   grasp_type: "CYLINDRICAL"
   speed_scale: 0.8
   aperture_ratio: 0.95
 
 cup:
-  target_force_n: 3.0
-  force_ceiling_n: 6.0
+  target_force_n: 3.0   # TODO(calibrate)
+  force_ceiling_n: 6.0  # TODO(calibrate)
   grasp_type: "CYLINDRICAL"
   speed_scale: 0.7
   aperture_ratio: 0.90
 
 bottle:
-  target_force_n: 5.5
-  force_ceiling_n: 9.0
+  target_force_n: 5.5   # TODO(calibrate)
+  force_ceiling_n: 9.0  # TODO(calibrate)
   grasp_type: "CYLINDRICAL"
   speed_scale: 0.85
   aperture_ratio: 0.90
 
 can:
-  target_force_n: 3.8
-  force_ceiling_n: 6.5
+  target_force_n: 3.8   # TODO(calibrate)
+  force_ceiling_n: 6.5  # TODO(calibrate)
   grasp_type: "CYLINDRICAL"
   speed_scale: 0.75
   aperture_ratio: 0.90
 
 apple:
-  target_force_n: 3.5
-  force_ceiling_n: 6.5
+  target_force_n: 3.5   # TODO(calibrate)
+  force_ceiling_n: 6.5  # TODO(calibrate)
   grasp_type: "SPHERICAL"
   speed_scale: 0.8
   aperture_ratio: 0.95
 
 orange:
-  target_force_n: 3.0
-  force_ceiling_n: 5.5
+  target_force_n: 3.0   # TODO(calibrate)
+  force_ceiling_n: 5.5  # TODO(calibrate)
   grasp_type: "SPHERICAL"
   speed_scale: 0.7
   aperture_ratio: 0.90
 
 banana:
-  target_force_n: 2.2
-  force_ceiling_n: 4.5
+  target_force_n: 2.2   # TODO(calibrate)
+  force_ceiling_n: 4.5  # TODO(calibrate)
   grasp_type: "PINCH"
   speed_scale: 0.6
   aperture_ratio: 0.85
 
 egg:
-  target_force_n: 1.5
-  force_ceiling_n: 3.0
+  target_force_n: 1.5   # TODO(calibrate)
+  force_ceiling_n: 3.0  # TODO(calibrate)
   grasp_type: "PINCH"
   speed_scale: 0.4
   aperture_ratio: 0.80
 
 cell phone:
-  target_force_n: 2.8
-  force_ceiling_n: 5.0
+  target_force_n: 2.8   # TODO(calibrate)
+  force_ceiling_n: 5.0  # TODO(calibrate)
   grasp_type: "PINCH"
   speed_scale: 0.7
   aperture_ratio: 0.85
 
 box:
-  target_force_n: 4.0
-  force_ceiling_n: 7.5
+  target_force_n: 4.0   # TODO(calibrate)
+  force_ceiling_n: 7.5  # TODO(calibrate)
   grasp_type: "POWER"
   speed_scale: 0.85
   aperture_ratio: 1.0
 
 fork:
-  target_force_n: 2.0
-  force_ceiling_n: 4.0
-  grasp_type: "PINCH"
-  speed_scale: 0.6
-  aperture_ratio: 0.70
-
-knife:
-  target_force_n: 2.0
-  force_ceiling_n: 4.0
+  target_force_n: 2.0   # TODO(calibrate)
+  force_ceiling_n: 4.0  # TODO(calibrate)
   grasp_type: "PINCH"
   speed_scale: 0.6
   aperture_ratio: 0.70
 
 spoon:
-  target_force_n: 2.0
-  force_ceiling_n: 4.0
+  target_force_n: 2.0   # TODO(calibrate)
+  force_ceiling_n: 4.0  # TODO(calibrate)
   grasp_type: "PINCH"
   speed_scale: 0.6
   aperture_ratio: 0.70

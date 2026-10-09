@@ -286,6 +286,26 @@ class TestVisionGripLink(unittest.TestCase):
         self.assertEqual(profile_mug.target_force_n, 4.5)
         self.assertEqual(profile_mug.force_ceiling_n, 8.0)
 
+    def test_knife_and_scissors_never_get_automatic_custom_grip_profile(self):
+        """Item 5: Knife and scissors must NEVER get an automatic grip profile; fall back to default."""
+        for sharp_obj in ("knife", "scissors", "scissor", "blade", "KNIFE", "Scissors"):
+            profile = self.grip_mgr.on_grasp_start(sharp_obj, confidence=0.99)
+            self.assertEqual(
+                profile.label,
+                "default",
+                f"Dangerous object '{sharp_obj}' was granted a custom profile instead of default!"
+            )
+            # Must match default profile force bounds
+            self.assertEqual(profile.target_force_n, self.grip_mgr.profiles["default"].target_force_n)
+            self.assertEqual(profile.force_ceiling_n, self.grip_mgr.profiles["default"].force_ceiling_n)
+
+        # Mid-grasp attempt to switch to knife must also use default
+        self.grip_mgr.on_grasp_start("mug", confidence=0.90)
+        ceiling_before = self.grip_mgr.current_force_ceiling_n
+        new_ceiling = self.grip_mgr.update_mid_grasp("knife", confidence=0.95)
+        default_ceiling = self.grip_mgr.profiles["default"].force_ceiling_n
+        self.assertEqual(new_ceiling, min(ceiling_before, default_ceiling))
+
     def test_mid_grasp_may_only_lower_force_ceiling(self):
         """Mid-grasp perception updates can LOWER the force ceiling, but NEVER raise it."""
         # 1. Start grasping a sturdy mug (ceiling = 8.0 N)
