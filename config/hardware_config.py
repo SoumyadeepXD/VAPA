@@ -206,14 +206,15 @@ JETSON_UART_CANDIDATES = [
     "/dev/ttyUSB0",  # USB-to-UART fallback (if ESP32 plugged via USB cable)
     "/dev/ttyACM0",  # CDC USB fallback
 ]
-JETSON_UART_BAUD = 115200
+JETSON_UART_BAUD = 460800  # High-speed UART baud rate (UART load < 35% with 2-channel EMG)
+JETSON_UART_BAUD_CANDIDATES = [460800, 115200]
 BIOSIGNAL_SERIAL_PORT = JETSON_UART_PORT
 BIOSIGNAL_BAUD_RATE = JETSON_UART_BAUD
 BIOSIGNAL_TIMEOUT_S = 0.05
 SERIAL_SERVO_PORT = JETSON_UART_PORT
 SERIAL_SERVO_BAUD_RATE = 1000000
-NUM_EMG_CHANNELS = 1   # Single MyoWare 2.0 on ADS1115 A0
-NUM_EEG_CHANNELS = 1   # Single EEG analog OUT on ADS1115 A1
+NUM_EMG_CHANNELS = 2   # Two-site EMG: Flexor on ADS1115 #1 (0x48) A0, Extensor on ADS1115 #2 (0x49) A2
+NUM_EEG_CHANNELS = 1   # Single EEG analog OUT on ADS1115 #1 (0x48) A1
 NUM_FSR_CHANNELS = 5   # 5x FSR402 sensors on ESP32 GPIO 32-36
 
 # 5x FSR Sensors on ESP32 Analog Pins (GPIO 32, 33, 34, 35, 36)
@@ -233,9 +234,37 @@ FSR_ESP32_PINS = {
     4: 36,  # Pinky (GPIO 36)
 }
 
-# Single ADS1115 (0x48): Bio-Signals (A0 = MyoWare EMG, A1 = EEG Output)
-ADS1115_BIO_ADDR = 0x48
-BIO_CHANNELS = {
-    0: "emg_myoware",   # ADS1115 A0: MyoWare EMG
-    1: "eeg_brainwave", # ADS1115 A1: EEG Output
+# Dual ADS1115 Addresses & Channel-to-Input Mappings
+ADS1115_PRIMARY_ADDR = 0x48    # ADS1115 #1 (Address 0x48)
+ADS1115_SECONDARY_ADDR = 0x49  # ADS1115 #2 (Address 0x49)
+ADS1115_BIO_ADDR = ADS1115_PRIMARY_ADDR  # Legacy compatibility alias
+
+# Configurable Channel-to-ADS-Input Mapping:
+EMG_CHANNEL_MAP = {
+    0: {
+        "name": "emg_flex",
+        "ads_addr": ADS1115_PRIMARY_ADDR,
+        "ads_input": 0,  # A0
+        "muscle": "flexor_digitorum_superficialis",
+        "action": "GRASP_CLOSE",
+    },
+    1: {
+        "name": "emg_ext",
+        "ads_addr": ADS1115_SECONDARY_ADDR,
+        "ads_input": 2,  # A2
+        "muscle": "extensor_digitorum_communis",
+        "action": "HAND_OPEN",
+    },
 }
+
+BIO_CHANNELS = {
+    0: "emg_flex",      # ADS1115 #1 A0: Flexor EMG
+    1: "eeg_brainwave", # ADS1115 #1 A1: EEG Output
+    2: "emg_ext",       # ADS1115 #2 A2: Extensor EMG
+}
+
+# ESP32 Hardware Safety Pins
+ESP32_PCA9685_OE_PIN = 25       # ESP32 GPIO 25 connected to PCA9685 Output Enable (/OE)
+ESP32_PCA9685_OE_ENABLED = False  # Set True when physical /OE wire is attached; defaults off for bench safety
+ESP32_ESTOP_BUTTON_PIN = 27     # ESP32 GPIO 27 momentary push button to GND (internal pullup)
+ESP32_FORCE_CEILING_N = 12.0    # Firmware hard force limit per FSR tripping OE independent of Jetson

@@ -52,15 +52,26 @@ class SyntheticBiosignalStreamer:
 
         gesture_map = {
             "grasp": "inject_emg_grasp",
+            "flexor": "inject_emg_grasp",
+            "flex": "inject_emg_grasp",
+            "fist": "inject_emg_grasp",
             "open": "inject_emg_open",
+            "extensor": "inject_emg_open",
+            "ext": "inject_emg_open",
             "estop": "inject_emg_estop",
+            "co_contraction": "inject_emg_estop",
             "reach": "inject_eeg_reach",
             "cycle": "inject_eeg_cycle",
         }
+        if gesture_name == "rest":
+            self.inject_emg_grasp = False
+            self.inject_emg_open = False
+            self.inject_emg_estop = False
+            return
         if gesture_name in gesture_map:
             attr = gesture_map[gesture_name]
             setattr(self, attr, True)
-            if gesture_name == "estop":
+            if gesture_name in ("estop", "co_contraction"):
                 self.inject_emg_grasp = False
                 self.inject_emg_open = False
             t = threading.Thread(target=_reset_after, args=(attr, duration_s), daemon=True)
@@ -137,8 +148,11 @@ class BiosignalStreamer:
             emg_data = np.random.normal(0, 1.0, (4, num_samples))
             eeg_data = np.random.normal(0, 1.0, (4, num_samples))
 
-            # Channel 0: Scaled MyoWare EMG signal (volts * 100 to map to microvolt-scale DSP)
-            emg_data[0, :] = float(frame.emg_volts * 80.0) + np.random.normal(0, 2.0, num_samples)
+            # Channel 0: Scaled MyoWare EMG flexor signal (volts * 80 to map to microvolt-scale DSP)
+            emg_data[0, :] = float(frame.emg_flex_volts * 80.0) + np.random.normal(0, 2.0, num_samples)
+
+            # Channel 1: Scaled MyoWare EMG extensor signal
+            emg_data[1, :] = float(frame.emg_ext_volts * 80.0) + np.random.normal(0, 2.0, num_samples)
 
             # Channel 0: EEG signal
             eeg_data[0, :] = float(frame.eeg_volts * 50.0) + np.random.normal(0, 3.0, num_samples)
@@ -163,6 +177,7 @@ class BiosignalStreamer:
 
     def trigger_synthetic_gesture(self, gesture_name: str, duration_s: float = 1.0):
         self.synthetic_streamer.trigger_gesture(gesture_name, duration_s)
+        self.esp32_receiver.trigger_synthetic_gesture(gesture_name, duration_s)
 
     def close(self):
         self.esp32_receiver.stop()
