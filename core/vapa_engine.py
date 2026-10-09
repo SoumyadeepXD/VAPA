@@ -18,6 +18,10 @@ from config.system_config import (
     BIOSIGNAL_PROCESS_RATE_HZ,
     REACH_TIMEOUT_S,
     GRASP_TIMEOUT_S,
+    EMG_DECODER,
+    EMG_CLASSIFIER_CONFIDENCE_THRESHOLD,
+    EMG_CLASSIFIER_MAJORITY_VOTING_N,
+    EMG_CLASSIFIER_WINDOW_MS,
 )
 from vision.realsense_camera import RealSenseCamera
 from vision.object_detector import ObjectDetector
@@ -25,6 +29,7 @@ from vision.spatial_3d import Spatial3DAnalyzer, GraspTarget3D
 from vision.visualizer_3d import VisionVisualizer
 from biosignals.biosignal_streamer import BiosignalStreamer
 from biosignals.emg_decoder import EMGDecoder, EMGIntent
+from biosignals.emg_classifier import EMGClassifier
 from biosignals.eeg_decoder import EEGDecoder, EEGIntent
 from biosignals.intent_fusion import IntentFusionEngine, MultimodalCommand
 from kinematics.arm_model import ArmModel
@@ -59,7 +64,16 @@ class VAPAEngine:
 
         # 2. Biosignal & Tactile Subsystem (ESP32 UART Telemetry)
         self.streamer = BiosignalStreamer(force_mock=force_mock)
-        self.emg_decoder = EMGDecoder()
+        if EMG_DECODER == "classifier":
+            logger.info("Initializing EMGClassifier (Safe ML architecture with fail-closed fallback)...")
+            self.emg_decoder = EMGClassifier(
+                confidence_threshold=EMG_CLASSIFIER_CONFIDENCE_THRESHOLD,
+                majority_vote_window=EMG_CLASSIFIER_MAJORITY_VOTING_N,
+                window_duration_ms=EMG_CLASSIFIER_WINDOW_MS,
+            )
+        else:
+            logger.info("Initializing baseline EMGDecoder (Dual-threshold envelope architecture)...")
+            self.emg_decoder = EMGDecoder()
         self.eeg_decoder = EEGDecoder()
         self.fusion = IntentFusionEngine()
 

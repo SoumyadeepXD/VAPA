@@ -294,3 +294,7 @@ class AsyncESP32Receiver:
                 "is_connected": self.is_connected,
                 "port": self.port,
             }
+
+
+# Canonical alias for telemetry receiver
+ESP32TelemetryReceiver = AsyncESP32Receiver
