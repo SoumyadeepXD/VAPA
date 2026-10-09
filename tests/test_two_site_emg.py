@@ -720,6 +720,56 @@ class TestHardwareEstopAndTelemetry(unittest.TestCase):
         }
         self.assertTrue(check_i2c_bus_collisions(candidate_devices=safe_devices))
 
+    def test_emg_channel_map_and_ads1115_assignments_reconciled(self):
+        """Item 7: Verify EMG_CHANNEL_MAP and ADS1115 channel assignments against architecture documentation."""
+        from config.hardware_config import (
+            EMG_CHANNEL_MAP,
+            ADS1115_PRIMARY_ADDR,
+            ADS1115_SECONDARY_ADDR,
+            BIO_CHANNELS,
+            FSR_ESP32_PINS,
+            ESP32_PCA9685_OE_PIN,
+            ESP32_ESTOP_BUTTON_PIN,
+        )
+
+        # 1. Dual ADS1115 address specifications
+        self.assertEqual(ADS1115_PRIMARY_ADDR, 0x48)
+        self.assertEqual(ADS1115_SECONDARY_ADDR, 0x49)
+
+        # 2. EMG Channel Map validation
+        # Flexor: ADS1115 #1 (0x48), Input A0
+        self.assertEqual(EMG_CHANNEL_MAP[0]["name"], "emg_flex")
+        self.assertEqual(EMG_CHANNEL_MAP[0]["ads_addr"], 0x48)
+        self.assertEqual(EMG_CHANNEL_MAP[0]["ads_input"], 0)
+        self.assertEqual(EMG_CHANNEL_MAP[0]["action"], "GRASP_CLOSE")
+
+        # Extensor: ADS1115 #2 (0x49), Input A2
+        self.assertEqual(EMG_CHANNEL_MAP[1]["name"], "emg_ext")
+        self.assertEqual(EMG_CHANNEL_MAP[1]["ads_addr"], 0x49)
+        self.assertEqual(EMG_CHANNEL_MAP[1]["ads_input"], 2)
+        self.assertEqual(EMG_CHANNEL_MAP[1]["action"], "HAND_OPEN")
+
+        # 3. Analog Bio Channels map
+        self.assertEqual(BIO_CHANNELS[0], "emg_flex")
+        self.assertEqual(BIO_CHANNELS[1], "eeg_brainwave")
+        self.assertEqual(BIO_CHANNELS[2], "emg_ext")
+
+        # 4. FSR dedicated internal ADC1 pins
+        self.assertEqual(FSR_ESP32_PINS, {0: 32, 1: 33, 2: 34, 3: 35, 4: 36})
+
+        # 5. Safety GPIOs
+        self.assertEqual(ESP32_PCA9685_OE_PIN, 25)
+        self.assertEqual(ESP32_ESTOP_BUTTON_PIN, 27)
+
+        # 6. Check architecture.md content consistency
+        with open("architecture.md", "r") as f:
+            arch_text = f.read()
+        self.assertIn("ADS1115 #1 @ 0x48", arch_text)
+        self.assertIn("ADS1115 #2 @ 0x49", arch_text)
+        self.assertIn("GPIO 32 ◄── FSR 1: Thumb Contact Force", arch_text)
+        self.assertIn("GPIO 25 ──► PCA9685 /OE Line", arch_text)
+        self.assertIn("GPIO 27 ◄── Hardware Emergency Stop Button", arch_text)
+
 
 if __name__ == "__main__":
     unittest.main()

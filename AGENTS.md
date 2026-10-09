@@ -60,11 +60,19 @@
   * MUX CH 3: Forearm Rotation Angle.
 
 ### 2.5 ESP32 Node 2 & Analog Sensor Conditioning
-* **ADS1115 #1 (`0x48`)**: 4x FSR 402 force sensors (Thumb, Index, Middle, Ring) with $10\text{ k}\Omega$ pull-down voltage dividers and $100\text{ nF}$ anti-aliasing filter caps ($f_c \approx 159\text{ Hz}$).
-* **ADS1115 #2 (`0x49`)**: MyoWare 2.0 EMG sensor (Ch A0) and Analog EEG brainwave sensor module (Ch A1).
-* **Telemetry JSON Format (100 Hz Serial2)**:
+* **5x FSR Sensors**: Connected directly to ESP32 internal ADC1 pins (GPIO 32: Thumb, GPIO 33: Index, GPIO 34: Middle, GPIO 35: Ring, GPIO 36: Pinky) with $10\text{ k}\Omega$ pull-down voltage dividers and $100\text{ nF}$ anti-aliasing filter caps ($f_c \approx 159\text{ Hz}$).
+* **Dual ADS1115 I2C ADCs (16-bit @ 860 SPS)**:
+  * **ADS1115 #1 (`0x48`)**:
+    * Channel A0: Flexor EMG (`emg_flex`, MyoWare 2.0 ENV output)
+    * Channel A1: Analog EEG brainwave sensor module (`eeg`)
+  * **ADS1115 #2 (`0x49`)**:
+    * Channel A2: Extensor EMG (`emg_ext`, MyoWare 2.0 ENV output)
+* **Hardware Safety & E-Stop Pins**:
+  * GPIO 27: Momentary hardware emergency stop button to GND (active-low, internal pullup)
+  * GPIO 25: PCA9685 Output Enable (`/OE`) line (active-low enable; driven HIGH to cut servo PWM)
+* **Telemetry Streaming (100 Hz Serial2 @ 460800 Baud)**:
   ```json
-  {"seq":1425,"fsr":[0.420,0.850,0.120,0.050,0.000],"emg":0.940,"eeg":0.315,"ts":482910}
+  {"seq":1425,"fsr":[0.420,0.850,0.120,0.050,0.000],"emg_flex":0.940,"emg_ext":0.120,"emg":0.940,"eeg":0.315,"enc":[125.4],"estop":0,"oe_ok":1,"ts":482910}
   ```
 
 ---

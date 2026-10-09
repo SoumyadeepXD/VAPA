@@ -78,7 +78,7 @@
  |  [ Hardware UART (/dev/ttyTHS1) ] ◄════════════════════════════════════════════════════════════════╗  |
  +----------------------------------------------------------------------------------------------------║--+
                                               INTER-NODE UART LINK                                    ║
-                                      (115200 Baud, 8-N-1, 100 Hz JSON Stream)                        ║
+                                      (460800 Baud, 8-N-1, 100 Hz JSON Stream)                        ║
  +----------------------------------------------------------------------------------------------------║--+
  |  [ Serial2 (GPIO 16 RX / GPIO 17 TX) ] ════════════════════════════════════════════════════════════╝  |
  |                                                                                                       |
@@ -90,13 +90,19 @@
  |         └── GPIO 36 ◄── FSR 5: Pinky Contact Force                                                    |
  |                                                                                                       |
  |  [ ESP32 Hardware I2C (GPIO 21 SDA / GPIO 22 SCL @ 400 kHz) ]                                         |
- |         ├── ADS1115 ADC @ 0x48 (16-bit, 860 SPS)                                                      |
- |         │     ├── CH A0 : MyoWare EMG Muscle Signal                                                   |
- |         │     └── CH A1 : EEG Analog Brainwave Signal                                                 |
+ |         ├── ADS1115 #1 @ 0x48 (16-bit, 860 SPS)                                                       |
+ |         │     ├── CH A0 : Flexor EMG (`emg_flex`, MyoWare 2.0 ENV)                                    |
+ |         │     └── CH A1 : EEG Analog Brainwave Signal (`eeg`)                                         |
+ |         ├── ADS1115 #2 @ 0x49 (16-bit, 860 SPS)                                                       |
+ |         │     └── CH A2 : Extensor EMG (`emg_ext`, MyoWare 2.0 ENV)                                   |
  |         └── AS5600 12-bit Magnetic Rotary Encoder @ 0x36 (Raw angle 0 - 360°)                         |
  |                                                                                                       |
+ |  [ ESP32 Hardware Safety & E-Stop Pins ]                                                              |
+ |         ├── GPIO 27 ◄── Hardware Emergency Stop Button to GND (Active-Low)                            |
+ |         └── GPIO 25 ──► PCA9685 /OE Line (Active-Low Enable, HIGH cuts servo PWM)                     |
+ |                                                                                                       |
  |                                  NODE 2: ESP32 MICROCONTROLLER                                        |
- |                         (Multi-Sensor Node: Single ADS1115 + 5x FSRs + AS5600)                        |
+ |                    (Multi-Sensor Node: Dual ADS1115 + 5x FSRs + AS5600 + Safety)                      |
  +-------------------------------------------------------------------------------------------------------+
 ```
 
@@ -134,8 +140,11 @@
  ├── GND ────────◄ Central Star Ground
  ├── GPIO 16 (RX2) ◄── Jetson Header Pin 8 (UART1_TXD)
  ├── GPIO 17 (TX2) ──► Jetson Header Pin 10 (UART1_RXD)
- ├── GPIO 21 (SDA) ──► I2C Bus Data (ADS1115 @ 0x48 + AS5600 @ 0x36)
+ ├── GPIO 21 (SDA) ──► I2C Bus Data (Dual ADS1115 @ 0x48/0x49 + AS5600 @ 0x36)
  ├── GPIO 22 (SCL) ──► I2C Bus Clock
+ │
+ ├── GPIO 25 ──► PCA9685 /OE Line (Active-Low Enable; HIGH drives disable)
+ ├── GPIO 27 ◄── Hardware Emergency Stop Button to GND (Active-Low)
  │
  ├── GPIO 32 ◄── FSR 1: Thumb Contact Force
  ├── GPIO 33 ◄── FSR 2: Index Contact Force
@@ -143,9 +152,12 @@
  ├── GPIO 35 ◄── FSR 4: Ring Contact Force
  └── GPIO 36 ◄── FSR 5: Pinky Contact Force
 
- ADS1115 ADC Module (Address 0x48):
- ├── A0 ◄── MyoWare EMG Sensor Output
- └── A1 ◄── EEG Brainwave Sensor Output
+ ADS1115 ADC Module #1 (Address 0x48):
+ ├── A0 ◄── Flexor EMG (`emg_flex`, MyoWare 2.0 ENV Output)
+ └── A1 ◄── EEG Brainwave Sensor Output (`eeg`)
+
+ ADS1115 ADC Module #2 (Address 0x49):
+ └── A2 ◄── Extensor EMG (`emg_ext`, MyoWare 2.0 ENV Output)
 
  AS5600 12-bit Magnetic Rotary Encoder (Address 0x36):
  └── Directly polled over Wire (Registers 0x0C/0x0D -> 0.0° - 360.0°)
@@ -155,18 +167,22 @@
 
 ## 4. Inter-Node Protocol & JSON Framing
 
-The ESP32 continuously transmits JSON telemetry frames to the Jetson Orin over **Serial2 (`115200 Baud`) at 100 Hz (every 10ms)**:
+The ESP32 continuously transmits JSON telemetry frames to the Jetson Orin over **Serial2 (`460800 Baud`) at 100 Hz (every 10ms)**:
 
 ```json
-{"seq":1425,"fsr":[0.420,0.850,0.120,0.050,0.030],"emg":0.940,"eeg":0.315,"enc":[142.5],"ts":482910}
+{"seq":1425,"fsr":[0.420,0.850,0.120,0.050,0.030],"emg_flex":0.940,"emg_ext":0.120,"emg":0.940,"eeg":0.315,"enc":[142.5],"estop":0,"oe_ok":1,"ts":482910}
 ```
 
 ### JSON Schema Breakdown:
 - **`seq`** (*uint32*): Monotonically increasing packet sequence counter for packet drop detection.
 - **`fsr`** (*array of 5 floats*): Filtered voltages ($0.000\text{V} - 3.300\text{V}$) corresponding to Thumb, Index, Middle, Ring, Pinky fingertip forces.
-- **`emg`** (*float*): Filtered MyoWare EMG muscle envelope voltage ($0.000\text{V} - 3.300\text{V}$).
+- **`emg_flex`** (*float*): Filtered flexor MyoWare EMG muscle envelope voltage ($0.000\text{V} - 3.300\text{V}$).
+- **`emg_ext`** (*float*): Filtered extensor MyoWare EMG muscle envelope voltage ($0.000\text{V} - 3.300\text{V}$).
+- **`emg`** (*float*): Legacy compatibility flexor EMG voltage ($0.000\text{V} - 3.300\text{V}$).
 - **`eeg`** (*float*): Filtered EEG brainwave analog input voltage.
 - **`enc`** (*array of floats*): Live AS5600 magnetic rotary encoder angle in degrees ($0.0° - 360.0°$).
+- **`estop`** (*int*): Hardware emergency stop button status (0=normal, 1=asserted).
+- **`oe_ok`** (*int*): Hardware output enable supervisor status (1=OE enabled/safe, 0=OE tripped/safe off).
 - **`ts`** (*uint32*): ESP32 internal millisecond timestamp (`millis()`).
 
 ---
@@ -178,7 +194,8 @@ This section provides the rigorous circuit equations, component ratings, and dig
 ```
  [ 3S LiPo 11.1V-12.6V ] ──► [ Buck 6V @ 10-15A ] ──► [ 4700µF Low-ESR Decoupling ] ──► PCA9685 Servos
                                                                                                │
- [ FSR 402 + 10kΩ ] ────► [ RC LPF (fc = 159Hz) ] ──► [ ADS1115 16-bit ADC ] ──► EMA Filter ──► ESP32 UART
+ [ 5x FSR 402 + 10kΩ ] ──► [ RC LPF (fc = 159Hz) ] ──► [ ESP32 ADC1 (GPIO 32-36) ] ──► EMA ───┼──► ESP32 UART
+ [ Dual MyoWare + EEG ] ─► [ RC LPF (fc = 159Hz) ] ──► [ Dual ADS1115 (0x48/0x49) ] ─► EMA ───┘
                                                                                                │
  [ Jetson Orin /dev/i2c-1 ] ────► [ Prescale = 121 (50Hz) ] ──► [ 12-bit Tick Mapping ] ───────┘
 ```
@@ -331,8 +348,8 @@ VAPA/
 ├── firmware/
 │   └── esp32_sensor_node/
 │       ├── src/
-│       │   └── main.cpp           # ESP32 C++ PlatformIO firmware (Single ADS1115 + 5x FSR + AS5600)
-│       ├── esp32_sensor_node.ino  # ESP32 Arduino sketch (Single ADS1115 + 5x FSR + AS5600)
+│       │   └── main.cpp           # ESP32 C++ PlatformIO firmware (Dual ADS1115 + 5x FSR + AS5600 + Safety)
+│       ├── esp32_sensor_node.ino  # ESP32 Arduino sketch (Dual ADS1115 + 5x FSR + AS5600 + Safety)
 │       └── platformio.ini         # PlatformIO build configuration & library dependencies
 ├── drivers/
 │   ├── __init__.py                # Package initialization for hardware drivers
